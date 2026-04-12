@@ -25,8 +25,9 @@ var (
 	colorReachable = color.RGBA{40, 90, 160, 100}
 	colorPath      = color.RGBA{80, 150, 230, 150}
 	colorSelected  = color.RGBA{230, 210, 80, 255}
-	colorPlayer    = color.RGBA{80, 180, 255, 255}
-	colorEnemy     = color.RGBA{220, 70, 70, 255}
+	colorPlayer         = color.RGBA{80, 180, 255, 255}
+	colorEnemy          = color.RGBA{220, 70, 70, 255}
+	colorEnemyReachable = color.RGBA{180, 50, 50, 70}
 )
 
 var terrainColors = map[terrain.TerrainType]color.RGBA{
