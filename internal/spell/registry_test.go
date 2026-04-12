@@ -69,7 +69,6 @@ func TestSpellFields(t *testing.T) {
 
 	tests := []struct {
 		id          string
-		name        string
 		spellType   string
 		costType    string
 		baseCost    int
@@ -79,15 +78,15 @@ func TestSpellFields(t *testing.T) {
 		status      string
 		statusTurns int
 	}{
-		{"fireball", "ファイアボール", "action", "exponential", 3, 3, 0, ElementFire, "burning", 2},
-		{"ice", "アイスランス", "action", "exponential", 3, 2, 0, ElementIce, "frozen", 1},
-		{"lightning", "ライトニング", "action", "exponential", 4, 4, 0, ElementLightning, "electrified", 1},
-		{"water", "ウォーター", "action", "additive", 2, 1, 0, ElementWater, "wet", 2},
-		{"poison", "ポイズン", "action", "additive", 2, 1, 0, ElementPoison, "poisoned", 3},
-		{"slash", "スラッシュ", "action", "exponential", 2, 3, 0, ElementPhysical, "bleeding", 2},
-		{"heal", "ヒール", "action", "exponential", 3, 0, 3, ElementNone, "", 0},
-		{"self", "セルフ", "target", "additive", 0, 0, 0, ElementNone, "", 0},
-		{"single", "シングル", "target", "additive", 1, 0, 0, ElementNone, "", 0},
+		{"fireball", "action", "exponential", 3, 3, 0, ElementFire, "burning", 2},
+		{"ice", "action", "exponential", 3, 2, 0, ElementIce, "frozen", 1},
+		{"lightning", "action", "exponential", 4, 4, 0, ElementLightning, "electrified", 1},
+		{"water", "action", "additive", 2, 1, 0, ElementWater, "wet", 2},
+		{"poison", "action", "additive", 2, 1, 0, ElementPoison, "poisoned", 3},
+		{"slash", "action", "exponential", 2, 3, 0, ElementPhysical, "bleeding", 2},
+		{"heal", "action", "exponential", 3, 0, 3, ElementNone, "", 0},
+		{"self", "target", "additive", 0, 0, 0, ElementNone, "", 0},
+		{"single", "target", "additive", 1, 0, 0, ElementNone, "", 0},
 	}
 
 	for _, tt := range tests {
@@ -95,9 +94,6 @@ func TestSpellFields(t *testing.T) {
 		if s == nil {
 			t.Errorf("spell %q not found", tt.id)
 			continue
-		}
-		if s.Name != tt.name {
-			t.Errorf("%s: name = %q, want %q", tt.id, s.Name, tt.name)
 		}
 		if s.Type != tt.spellType {
 			t.Errorf("%s: type = %q, want %q", tt.id, s.Type, tt.spellType)
@@ -264,5 +260,104 @@ func TestUtilitySpells(t *testing.T) {
 	}
 	if !wall.ClearTargets {
 		t.Error("wall: clear_targets should be true")
+	}
+}
+
+// --- Locale tests ---
+
+func TestDefaultLocaleJapanese(t *testing.T) {
+	reg, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded failed: %v", err)
+	}
+
+	tests := []struct {
+		id   string
+		name string
+	}{
+		{"fireball", "ファイアボール"},
+		{"ice", "アイスランス"},
+		{"self", "セルフ"},
+		{"heal", "ヒール"},
+	}
+
+	for _, tt := range tests {
+		text := reg.Text(tt.id)
+		if text.Name != tt.name {
+			t.Errorf("ja text %s: name = %q, want %q", tt.id, text.Name, tt.name)
+		}
+		if text.Description == "" {
+			t.Errorf("ja text %s: description is empty", tt.id)
+		}
+	}
+}
+
+func TestSwitchLocaleEnglish(t *testing.T) {
+	reg, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded failed: %v", err)
+	}
+
+	if err := reg.SetLocale("en"); err != nil {
+		t.Fatalf("SetLocale(en) failed: %v", err)
+	}
+
+	tests := []struct {
+		id   string
+		name string
+	}{
+		{"fireball", "Fireball"},
+		{"ice", "Ice Lance"},
+		{"self", "Self"},
+		{"heal", "Heal"},
+	}
+
+	for _, tt := range tests {
+		text := reg.Text(tt.id)
+		if text.Name != tt.name {
+			t.Errorf("en text %s: name = %q, want %q", tt.id, text.Name, tt.name)
+		}
+		if text.Description == "" {
+			t.Errorf("en text %s: description is empty", tt.id)
+		}
+	}
+}
+
+func TestLocaleFallback(t *testing.T) {
+	reg, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded failed: %v", err)
+	}
+
+	if err := reg.SetLocale("en"); err != nil {
+		t.Fatalf("SetLocale(en) failed: %v", err)
+	}
+
+	// "nonexistent" is not in any locale -> should fallback to ID
+	text := reg.Text("nonexistent")
+	if text.Name != "nonexistent" {
+		t.Errorf("fallback: name = %q, want %q", text.Name, "nonexistent")
+	}
+}
+
+func TestAllSpellsHaveLocaleText(t *testing.T) {
+	reg, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded failed: %v", err)
+	}
+
+	for _, lang := range []string{"ja", "en"} {
+		if err := reg.SetLocale(lang); err != nil {
+			t.Fatalf("SetLocale(%s) failed: %v", lang, err)
+		}
+		for _, s := range reg.All() {
+			text := reg.Text(s.ID)
+			if text.Name == s.ID {
+				t.Errorf("[%s] spell %q: missing localized name (got ID as fallback)", lang, s.ID)
+			}
+			if text.Description == "" {
+				t.Errorf("[%s] spell %q: missing localized description", lang, s.ID)
+			}
+		}
 	}
 }

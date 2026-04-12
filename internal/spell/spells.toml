@@ -1,5 +1,7 @@
-# Magi Link - Spell Definitions
+# Magi Link - Spell Definitions (mechanics only)
 # ============================================================
+# Localized text (name, description) is in locales/*.toml
+#
 # type: "target" | "action"
 # cost_type: "exponential" | "additive"
 # shape: "self" | "single" | "line" | "area" | "ring" | "adjacent"
@@ -7,90 +9,65 @@
 # status: "burning" | "frozen" | "electrified" | "wet" | "poisoned" | "bleeding"
 # movement: "push" | "pull"
 # terrain_create: "generated_wall" | "water_puddle" | "poison_swamp" | "fire_floor"
-#
-# terrain_interactions:
-#   on     = existing terrain type
-#   result = resulting terrain type after interaction
-#
-# status_combos:
-#   if               = existing status on target
-#   remove           = remove the existing status (default: false)
-#   bonus_damage     = additional damage dealt
-#   apply            = new status to apply instead
-#   apply_turns      = duration of the new status
 # ============================================================
 
 # ============================================================
-# Target Spells - ターゲットスペル
+# Target Spells
 # ============================================================
 
 [spells.self]
-name        = "セルフ"
-description = "術者自身を対象にする"
-type        = "target"
-cost_type   = "additive"
-base_cost   = 0
-shape       = "self"
-range       = 0
-radius      = 0
+type      = "target"
+cost_type = "additive"
+base_cost = 0
+shape     = "self"
+range     = 0
+radius    = 0
 
 [spells.single]
-name        = "シングル"
-description = "1つのヘックスを指定する"
-type        = "target"
-cost_type   = "additive"
-base_cost   = 1
-shape       = "single"
-range       = 5
-radius      = 0
+type      = "target"
+cost_type = "additive"
+base_cost = 1
+shape     = "single"
+range     = 5
+radius    = 0
 
 [spells.line]
-name        = "ライン"
-description = "術者から指定方向へ直線上のヘックスすべて"
-type        = "target"
-cost_type   = "additive"
-base_cost   = 2
-shape       = "line"
-range       = 6
-radius      = 0
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "line"
+range     = 6
+radius    = 0
 
 [spells.area]
-name        = "エリア"
-description = "指定点から半径内のヘックスすべて"
-type        = "target"
-cost_type   = "exponential"
-base_cost   = 3
-shape       = "area"
-range       = 4
-radius      = 2
+type      = "target"
+cost_type = "exponential"
+base_cost = 3
+shape     = "area"
+range     = 4
+radius    = 2
 
 [spells.ring]
-name        = "リング"
-description = "指定点から一定距離のヘックス群"
-type        = "target"
-cost_type   = "additive"
-base_cost   = 2
-shape       = "ring"
-range       = 4
-radius      = 2
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "ring"
+range     = 4
+radius    = 2
 
 [spells.adjacent]
-name        = "アジェイセント"
-description = "指定ヘックスに隣接する6マス"
-type        = "target"
-cost_type   = "additive"
-base_cost   = 2
-shape       = "adjacent"
-range       = 4
-radius      = 0
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "adjacent"
+range     = 4
+radius    = 0
 
 # ============================================================
-# Action Spells - アクションスペル (攻撃系)
+# Action Spells - Attack
 # ============================================================
 
 [spells.fireball]
-name         = "ファイアボール"
-description  = "火属性ダメージ。対象にBurningを付与"
 type         = "action"
 cost_type    = "exponential"
 base_cost    = 3
@@ -113,8 +90,6 @@ status_turns = 2
   bonus_damage = 2
 
 [spells.ice]
-name         = "アイスランス"
-description  = "氷属性ダメージ。対象にFrozenを付与"
 type         = "action"
 cost_type    = "exponential"
 base_cost    = 3
@@ -133,8 +108,6 @@ status_turns = 1
   bonus_damage = 1
 
 [spells.lightning]
-name         = "ライトニング"
-description  = "雷属性ダメージ。対象にElectrifiedを付与。水場で連鎖"
 type         = "action"
 cost_type    = "exponential"
 base_cost    = 4
@@ -153,8 +126,6 @@ status_turns = 1
   bonus_damage = 4
 
 [spells.water]
-name           = "ウォーター"
-description    = "水属性ダメージ。対象にWetを付与し、地面を水たまりにする"
 type           = "action"
 cost_type      = "additive"
 base_cost      = 2
@@ -169,14 +140,12 @@ terrain_create = "water_puddle"
   result = "plain"
 
   [[spells.water.status_combos]]
-  if           = "burning"
-  remove       = true
-  apply        = "wet"
-  apply_turns  = 2
+  if          = "burning"
+  remove      = true
+  apply       = "wet"
+  apply_turns = 2
 
 [spells.poison]
-name           = "ポイズン"
-description    = "毒属性ダメージ。対象にPoisonedを付与し、地面を毒沼にする"
 type           = "action"
 cost_type      = "additive"
 base_cost      = 2
@@ -187,8 +156,6 @@ status_turns   = 3
 terrain_create = "poison_swamp"
 
 [spells.slash]
-name         = "スラッシュ"
-description  = "物理ダメージ。対象にBleedingを付与。破壊可能壁を破壊"
 type         = "action"
 cost_type    = "exponential"
 base_cost    = 2
@@ -203,36 +170,28 @@ status_turns = 2
   bonus_damage = 3
 
 # ============================================================
-# Action Spells - アクションスペル (ユーティリティ系)
+# Action Spells - Utility
 # ============================================================
 
 [spells.heal]
-name        = "ヒール"
-description = "対象のHPを回復する"
-type        = "action"
-cost_type   = "exponential"
-base_cost   = 3
-heal        = 3
+type      = "action"
+cost_type = "exponential"
+base_cost = 3
+heal      = 3
 
 [spells.push]
-name        = "プッシュ"
-description = "対象を術者から1ヘックス遠ざける。移動先が次のターゲットになる"
-type        = "action"
-cost_type   = "additive"
-base_cost   = 2
-movement    = "push"
+type      = "action"
+cost_type = "additive"
+base_cost = 2
+movement  = "push"
 
 [spells.pull]
-name        = "プル"
-description = "対象を術者へ1ヘックス引き寄せる。移動先が次のターゲットになる"
-type        = "action"
-cost_type   = "additive"
-base_cost   = 2
-movement    = "pull"
+type      = "action"
+cost_type = "additive"
+base_cost = 2
+movement  = "pull"
 
 [spells.wall]
-name           = "ウォール"
-description    = "対象ヘックスに壁を生成する。ターゲットリストはクリアされる"
 type           = "action"
 cost_type      = "exponential"
 base_cost      = 3

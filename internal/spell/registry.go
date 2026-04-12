@@ -18,7 +18,8 @@ type spellsFile struct {
 
 // Registry holds all loaded spell definitions and provides lookups.
 type Registry struct {
-	defs map[string]*SpellDef
+	defs   map[string]*SpellDef
+	locale *Locale
 }
 
 // NewRegistry creates an empty registry.
@@ -26,16 +27,27 @@ func NewRegistry() *Registry {
 	return &Registry{defs: make(map[string]*SpellDef)}
 }
 
-// LoadEmbedded loads spell definitions from the embedded spells.toml.
+// LoadEmbedded loads spell definitions and the default locale.
 func LoadEmbedded() (*Registry, error) {
 	data, err := embeddedSpells.ReadFile("spells.toml")
 	if err != nil {
 		return nil, fmt.Errorf("read embedded spells.toml: %w", err)
 	}
-	return Load(data)
+	reg, err := Load(data)
+	if err != nil {
+		return nil, err
+	}
+
+	loc, err := LoadLocale(DefaultLang)
+	if err != nil {
+		return nil, fmt.Errorf("load default locale: %w", err)
+	}
+	reg.locale = loc
+
+	return reg, nil
 }
 
-// Load parses TOML bytes into a Registry.
+// Load parses TOML bytes into a Registry (without locale).
 func Load(data []byte) (*Registry, error) {
 	var f spellsFile
 	if err := toml.Unmarshal(data, &f); err != nil {
@@ -49,6 +61,30 @@ func Load(data []byte) (*Registry, error) {
 		r.defs[id] = &d
 	}
 	return r, nil
+}
+
+// SetLocale switches the locale used for spell text lookups.
+func (r *Registry) SetLocale(lang string) error {
+	loc, err := LoadLocale(lang)
+	if err != nil {
+		return err
+	}
+	r.locale = loc
+	return nil
+}
+
+// Locale returns the current locale, or nil if not set.
+func (r *Registry) Locale() *Locale {
+	return r.locale
+}
+
+// Text returns the localized text for a spell ID.
+// If no locale is set, returns the spell ID as the name.
+func (r *Registry) Text(spellID string) SpellText {
+	if r.locale != nil {
+		return r.locale.Text(spellID)
+	}
+	return SpellText{Name: spellID}
 }
 
 // Get returns a spell definition by ID, or nil if not found.

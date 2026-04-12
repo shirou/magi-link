@@ -42,13 +42,12 @@ type StatusCombo struct {
 
 // SpellDef is a data-driven spell definition loaded from TOML.
 // All fields use simple types so new spells can be added without code changes.
+// Localized text (name, description) is stored separately in Locale.
 type SpellDef struct {
-	ID          string // set from the TOML map key
-	Name        string `toml:"name"`
-	Description string `toml:"description"`
-	Type        string `toml:"type"`      // "target" | "action"
-	CostType    string `toml:"cost_type"` // "exponential" | "additive"
-	BaseCost    int    `toml:"base_cost"`
+	ID       string // set from the TOML map key
+	Type     string `toml:"type"`      // "target" | "action"
+	CostType string `toml:"cost_type"` // "exponential" | "additive"
+	BaseCost int    `toml:"base_cost"`
 
 	// --- Target spell fields ---
 	Shape  TargetShape `toml:"shape"`

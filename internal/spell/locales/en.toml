@@ -1,0 +1,65 @@
+# Magi Link - English Spell Texts
+
+[self]
+name        = "Self"
+description = "Target the caster"
+
+[single]
+name        = "Single"
+description = "Select one hex"
+
+[line]
+name        = "Line"
+description = "Select all hexes in a straight line from caster"
+
+[area]
+name        = "Area"
+description = "Select all hexes within radius of a point"
+
+[ring]
+name        = "Ring"
+description = "Select hexes at exact distance from a point"
+
+[adjacent]
+name        = "Adjacent"
+description = "Select the 6 hexes adjacent to a point"
+
+[fireball]
+name        = "Fireball"
+description = "Fire damage. Applies Burning to targets"
+
+[ice]
+name        = "Ice Lance"
+description = "Ice damage. Applies Frozen to targets"
+
+[lightning]
+name        = "Lightning"
+description = "Lightning damage. Applies Electrified. Chains on water"
+
+[water]
+name        = "Water"
+description = "Water damage. Applies Wet and creates water puddle"
+
+[poison]
+name        = "Poison"
+description = "Poison damage. Applies Poisoned and creates poison swamp"
+
+[slash]
+name        = "Slash"
+description = "Physical damage. Applies Bleeding. Destroys breakable walls"
+
+[heal]
+name        = "Heal"
+description = "Restore HP to targets"
+
+[push]
+name        = "Push"
+description = "Push targets 1 hex away from caster. New position becomes next target"
+
+[pull]
+name        = "Pull"
+description = "Pull targets 1 hex toward caster. New position becomes next target"
+
+[wall]
+name        = "Wall"
+description = "Create a wall on target hexes. Clears the target list"
