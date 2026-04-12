@@ -5,6 +5,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 // GameState represents the current state of the game
@@ -22,6 +23,7 @@ type Game struct {
 	state  GameState
 	width  int
 	height int
+	battle *BattleState
 }
 
 // New creates a new Game instance
@@ -37,13 +39,15 @@ func New() *Game {
 func (g *Game) Update() error {
 	switch g.state {
 	case StateTitle:
-		if ebiten.IsKeyPressed(ebiten.KeySpace) {
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+			g.battle = NewBattle(g.width, g.height)
 			g.state = StateBattle
 		}
 	case StateBattle:
-		// TODO: battle logic
+		g.battle.Update()
 	case StateGameOver:
-		if ebiten.IsKeyPressed(ebiten.KeyR) {
+		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+			g.battle = NewBattle(g.width, g.height)
 			g.state = StateBattle
 		}
 	}
@@ -58,7 +62,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateTitle:
 		ebitenutil.DebugPrint(screen, "Magi Link\n\nPress SPACE to start")
 	case StateBattle:
-		ebitenutil.DebugPrint(screen, "Battle - WIP")
+		g.battle.Draw(screen)
 	case StateGameOver:
 		ebitenutil.DebugPrint(screen, "Game Over\n\nPress R to restart")
 	}
