@@ -35,6 +35,7 @@ var (
 	colorSlotAction = color.RGBA{100, 35, 35, 255}
 	colorSlotHovT   = color.RGBA{45, 80, 140, 255}
 	colorSlotHovA   = color.RGBA{130, 50, 50, 255}
+	colorSlotDim    = color.RGBA{30, 30, 38, 180} // dimmed when not the expected type
 	colorChainSlotC = color.RGBA{42, 45, 60, 255}
 	colorChainHovC  = color.RGBA{62, 65, 85, 255}
 	colorCastOK     = color.RGBA{30, 105, 45, 255}
@@ -47,7 +48,6 @@ var (
 var warnTextImg *ebiten.Image
 
 func init() {
-	// "Not enough mana!" = 16 chars × 6px = 96px wide, 16px tall
 	warnTextImg = ebiten.NewImage(96, 16)
 }
 
@@ -59,8 +59,13 @@ func (b *BattleState) updateSpellUI() {
 	b.HoverChainIdx = -1
 	b.HoverCast = false
 
-	// Check spellbook slot hover
-	for i := range b.Book.Spells {
+	expected := b.Chain.NextExpected()
+
+	// Check spellbook slot hover (only for expected type)
+	for i, s := range b.Book.Spells {
+		if s.ParseSpellType() != expected {
+			continue
+		}
 		sx := int(slotsX) + i*(slotW+slotGap)
 		if mx >= sx && mx < sx+slotW && my >= bookRowY && my < bookRowY+slotH {
 			b.HoverBookIdx = i
@@ -87,7 +92,7 @@ func (b *BattleState) updateSpellUI() {
 		b.HoverCast = true
 	}
 
-	// Cache chain cost for this frame (avoids recomputing in canCast + Draw)
+	// Cache chain cost for this frame
 	b.cachedChainCost = b.Chain.TotalCost()
 
 	// Handle left-click
@@ -99,8 +104,8 @@ func (b *BattleState) updateSpellUI() {
 				b.cachedChainCost = b.Chain.TotalCost()
 			}
 		} else if b.HoverChainIdx >= 0 && b.HoverChainIdx < len(b.Chain.Slots) {
-			idx := b.HoverChainIdx
-			b.Chain.Slots = append(b.Chain.Slots[:idx], b.Chain.Slots[idx+1:]...)
+			// Remove clicked slot and everything after it to keep alternation valid
+			b.Chain.Slots = b.Chain.Slots[:b.HoverChainIdx]
 			b.HoverChainIdx = -1
 			b.cachedChainCost = b.Chain.TotalCost()
 		} else if b.HoverCast && b.canCast() {
@@ -127,7 +132,6 @@ func (b *BattleState) canCast() bool {
 func (b *BattleState) castChain() {
 	b.Player.UseMana(b.cachedChainCost)
 
-	// Record spells used for passive triggers
 	for _, slot := range b.Chain.Slots {
 		if slot.Spell != nil {
 			b.TurnStats.SpellsUsed[slot.Spell.ID]++
@@ -147,9 +151,7 @@ func isInSpellPanel(my int) bool {
 func (b *BattleState) drawSpellPanel(screen *ebiten.Image) {
 	sw := screen.Bounds().Dx()
 
-	// Panel background
 	vector.DrawFilledRect(screen, 0, panelY, float32(sw), panelH, colorPanelBG, false)
-	// Top border line
 	vector.DrawFilledRect(screen, 0, panelY, float32(sw), 2, colorPanelLine, false)
 
 	b.drawBookRow(screen)
@@ -158,14 +160,21 @@ func (b *BattleState) drawSpellPanel(screen *ebiten.Image) {
 }
 
 func (b *BattleState) drawBookRow(screen *ebiten.Image) {
-	ebitenutil.DebugPrintAt(screen, "Book:", int(labelX), bookRowY+6)
+	expected := b.Chain.NextExpected()
+	label := "Spell:"
+	if expected == spell.SpellTypeTarget {
+		label = "Target:"
+	}
+	ebitenutil.DebugPrintAt(screen, label, int(labelX), bookRowY+6)
 
 	for i, s := range b.Book.Spells {
 		sx := float32(slotsX + i*(slotW+slotGap))
+		isExpected := s.ParseSpellType() == expected
 
-		// Determine slot color based on spell type and hover
 		var bg color.RGBA
-		if s.IsTarget() {
+		if !isExpected {
+			bg = colorSlotDim
+		} else if s.IsTarget() {
 			bg = colorSlotTarget
 			if b.HoverBookIdx == i {
 				bg = colorSlotHovT
@@ -179,12 +188,10 @@ func (b *BattleState) drawBookRow(screen *ebiten.Image) {
 
 		vector.DrawFilledRect(screen, sx, bookRowY, slotW, slotH, bg, false)
 
-		// Spell name
 		text := b.SpellReg.Text(s.ID)
 		name := truncate(text.Name, 9)
 		ebitenutil.DebugPrintAt(screen, name, int(sx)+3, bookRowY+2)
 
-		// Base cost in corner
 		costStr := fmt.Sprintf("%d", s.BaseCost)
 		ebitenutil.DebugPrintAt(screen, costStr, int(sx)+slotW-len(costStr)*6-3, bookRowY+16)
 	}
@@ -194,18 +201,23 @@ func (b *BattleState) drawChainRow(screen *ebiten.Image) {
 	ebitenutil.DebugPrintAt(screen, "Chain:", int(labelX), chainRowY+6)
 
 	if len(b.Chain.Slots) == 0 {
-		ebitenutil.DebugPrintAt(screen, "(click spells above to build chain)", int(slotsX), chainRowY+6)
+		ebitenutil.DebugPrintAt(screen, "(select a spell to cast)", int(slotsX), chainRowY+6)
 		return
 	}
 
-	// Compute all slot costs in a single O(n) pass
 	costs := b.Chain.SlotCosts()
 
 	cx := float32(slotsX)
 	for i, slot := range b.Chain.Slots {
-		// Draw arrow between slots
+		// Arrow between pairs: thin ">" between action-target,
+		// bold ">>" between target-action (pair boundary)
 		if i > 0 {
-			ebitenutil.DebugPrintAt(screen, ">", int(cx)+3, chainRowY+6)
+			prev := b.Chain.Slots[i-1]
+			arrow := ">"
+			if prev.Spell.IsTarget() && slot.Spell.IsAction() {
+				arrow = ">>"
+			}
+			ebitenutil.DebugPrintAt(screen, arrow, int(cx)+1, chainRowY+6)
 			cx += arrowW
 		}
 
@@ -219,7 +231,6 @@ func (b *BattleState) drawChainRow(screen *ebiten.Image) {
 		name := truncate(text.Name, 9)
 		ebitenutil.DebugPrintAt(screen, name, int(cx)+3, chainRowY+2)
 
-		// Show individual cost (from pre-computed array)
 		costStr := fmt.Sprintf("%d", costs[i])
 		ebitenutil.DebugPrintAt(screen, costStr, int(cx)+slotW-len(costStr)*6-3, chainRowY+16)
 
@@ -232,7 +243,6 @@ func (b *BattleState) drawCastRow(screen *ebiten.Image, screenW int) {
 	hasMana := totalCost <= b.Player.Mana
 	hasChain := len(b.Chain.Slots) > 0
 
-	// Cast button
 	castX := float32(slotsX)
 	var btnColor color.RGBA
 	if !hasChain || !hasMana {
@@ -250,18 +260,15 @@ func (b *BattleState) drawCastRow(screen *ebiten.Image, screenW int) {
 	}
 	ebitenutil.DebugPrintAt(screen, castLabel, int(castX)+3, castRowY+6)
 
-	// Mana display
 	manaX := int(castX) + castBtnW + 16
 	manaStr := fmt.Sprintf("Mana: %d/%d", b.Player.Mana, b.Player.MaxMana)
 	ebitenutil.DebugPrintAt(screen, manaStr, manaX, castRowY+6)
 
-	// Mana warning (uses pre-allocated image instead of per-frame allocation)
 	if hasChain && !hasMana {
 		warnX := manaX + len(manaStr)*6 + 12
 		drawWarnText(screen, "Not enough mana!", warnX, castRowY+6)
 	}
 
-	// Controls hint
 	hintStr := "C:Cast  X:Clear"
 	ebitenutil.DebugPrintAt(screen, hintStr, screenW-len(hintStr)*6-16, castRowY+6)
 }

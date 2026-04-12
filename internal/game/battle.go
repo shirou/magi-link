@@ -85,9 +85,9 @@ func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 	enemy2 := entity.NewUnit(3, "Shard", hex.OffsetToHex(9, 6), 40, 0)
 	enemy3 := entity.NewUnit(4, "Chorus", hex.OffsetToHex(7, 7), 25, 0)
 
-	// Initialize spellbook with starter spells
+	// Initialize spellbook with starter spells (actions first, then targets)
 	book := spell.NewSpellBook()
-	starterSpells := []string{"single", "self", "line", "area", "fireball", "ice", "water", "heal"}
+	starterSpells := []string{"fireball", "ice", "water", "heal", "single", "self", "line", "area"}
 	for _, id := range starterSpells {
 		if s := reg.Get(id); s != nil {
 			book.Add(s)
