@@ -24,6 +24,30 @@ description = "Select hexes at exact distance from a point"
 name        = "Adjacent"
 description = "Select the 6 hexes adjacent to a point"
 
+[weakest]
+name        = "Weakest"
+description = "Auto-target the enemy with the lowest HP"
+
+[ally]
+name        = "Ally"
+description = "Target one ally unit"
+
+[fire_filter]
+name        = "Fire Filter"
+description = "Target all fire floor hexes within radius 5"
+
+[poison_filter]
+name        = "Poison Filter"
+description = "Target all poison swamp hexes within radius 5"
+
+[electric_filter]
+name        = "Elec. Filter"
+description = "Target all electric floor hexes within radius 6"
+
+[thorns_filter]
+name        = "Thorn Filter"
+description = "Target all thorns hexes within radius 5"
+
 [fireball]
 name        = "Fireball"
 description = "Fire damage. Applies Burning to targets"

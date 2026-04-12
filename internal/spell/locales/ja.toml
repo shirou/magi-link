@@ -24,6 +24,30 @@ description = "指定点から一定距離のヘックス群"
 name        = "アジェイセント"
 description = "指定ヘックスに隣接する6マス"
 
+[weakest]
+name        = "ウィーケスト"
+description = "HP最小の敵1体を自動で対象にする"
+
+[ally]
+name        = "アライ"
+description = "味方ユニット1体を対象にする"
+
+[fire_filter]
+name        = "炎上フィルタ"
+description = "半径5内の炎上地形ヘックスすべてを対象にする"
+
+[poison_filter]
+name        = "毒沼フィルタ"
+description = "半径5内の毒沼ヘックスすべてを対象にする"
+
+[electric_filter]
+name        = "感電フィルタ"
+description = "半径6内の感電地形ヘックスすべてを対象にする"
+
+[thorns_filter]
+name        = "茨フィルタ"
+description = "半径5内の茨ヘックスすべてを対象にする"
+
 [fireball]
 name        = "ファイアボール"
 description = "火属性ダメージ。対象にBurningを付与"

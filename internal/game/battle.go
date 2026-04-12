@@ -9,6 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/shirou/magi_link/internal/entity"
 	"github.com/shirou/magi_link/internal/hex"
+	"github.com/shirou/magi_link/internal/resolve"
 	"github.com/shirou/magi_link/internal/spell"
 	"github.com/shirou/magi_link/internal/terrain"
 )
@@ -113,6 +114,19 @@ func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 		HoverChainIdx: -1,
 	}
 }
+
+// --- resolve.Battlefield interface implementation ---
+
+func (b *BattleState) UnitAt(h hex.Hex) *entity.Unit  { return b.unitAt(h) }
+func (b *BattleState) AllUnits() []*entity.Unit        { return b.Units }
+func (b *BattleState) TerrainAt(h hex.Hex) *terrain.Terrain { return b.TerrainMap.Get(h) }
+func (b *BattleState) GridBounds() *hex.Grid           { return b.Grid }
+func (b *BattleState) IsWall(h hex.Hex) bool           { return b.TerrainMap.Get(h).IsWall() }
+func (b *BattleState) HasLineOfSight(from, to hex.Hex) bool {
+	return b.TerrainMap.HasLineOfSight(from, to)
+}
+
+// --- internal helpers ---
 
 func (b *BattleState) isBlocked(h hex.Hex) bool {
 	if !b.TerrainMap.Get(h).IsPassable() {
@@ -250,24 +264,38 @@ func (b *BattleState) updateChainTarget() {
 
 	// Confirm target with left-click on a valid hex
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
-		b.executeChainAt(b.HoverHex)
+		b.executeLinkAt(b.HoverHex)
 		b.Phase = PhasePlayerSelect
 	}
 }
 
-// executeChainAt deducts mana, records spell usage, and clears the chain.
-// The target hex is stored for the future execution engine.
-func (b *BattleState) executeChainAt(target hex.Hex) {
+// executeLinkAt runs the resolve pipeline and applies the result.
+func (b *BattleState) executeLinkAt(target hex.Hex) {
 	b.Player.UseMana(b.cachedChainCost)
 
+	// Build spell list from chain slots
+	spells := make([]*spell.SpellDef, 0, len(b.Chain.Slots))
 	for _, slot := range b.Chain.Slots {
 		if slot.Spell != nil {
+			spells = append(spells, slot.Spell)
 			b.TurnStats.SpellsUsed[slot.Spell.ID]++
 		}
 	}
 
-	// TODO: pass target hex to the spell execution engine
-	_ = target
+	// Compute direction from caster to clicked hex
+	cx, cy := b.Grid.HexToScreen(b.Player.Pos)
+	tx, ty := b.Grid.HexToScreen(target)
+	dir := hex.AngleToDirection(tx-cx, ty-cy)
+
+	result := resolve.ExecuteLink(resolve.LinkInput{
+		CasterPos:  b.Player.Pos,
+		ClickedHex: target,
+		Direction:  dir,
+		Spells:     spells,
+	}, b)
+
+	// Store result for rendering / future action execution
+	_ = result
 
 	b.Chain.Slots = b.Chain.Slots[:0]
 	b.cachedChainCost = 0

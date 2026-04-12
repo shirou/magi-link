@@ -4,12 +4,15 @@ package spell
 type TargetShape string
 
 const (
-	ShapeSelf     TargetShape = "self"
-	ShapeSingle   TargetShape = "single"
-	ShapeLine     TargetShape = "line"
-	ShapeArea     TargetShape = "area"
-	ShapeRing     TargetShape = "ring"
-	ShapeAdjacent TargetShape = "adjacent"
+	ShapeSelf          TargetShape = "self"
+	ShapeSingle        TargetShape = "single"
+	ShapeLine          TargetShape = "line"
+	ShapeArea          TargetShape = "area"
+	ShapeRing          TargetShape = "ring"
+	ShapeAdjacent      TargetShape = "adjacent"
+	ShapeWeakest       TargetShape = "weakest"
+	ShapeAlly          TargetShape = "ally"
+	ShapeTerrainFilter TargetShape = "terrain_filter"
 )
 
 // Element represents an elemental affinity.
@@ -65,6 +68,14 @@ type SpellDef struct {
 	// --- Terrain ---
 	TerrainCreate string `toml:"terrain_create"` // terrain type to create on target hex
 	ClearTargets  bool   `toml:"clear_targets"`  // clear target list after execution
+
+	// --- Target: terrain filter ---
+	Filter string `toml:"filter"` // terrain type name to match (for terrain_filter shape)
+
+	// --- Same-type stacking ---
+	Stacking      string `toml:"stacking"`       // "increment" | "none" | "full" (default: "none")
+	StackingField string `toml:"stacking_field"`  // which field to increment: "radius" | "range"
+	StackingValue int    `toml:"stacking_value"`  // increment per extra same-shape use
 
 	// --- Interactions ---
 	TerrainInteractions []TerrainInteraction `toml:"terrain_interactions"`
