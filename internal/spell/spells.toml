@@ -1,0 +1,199 @@
+# Magi Link - Spell Definitions (mechanics only)
+# ============================================================
+# Localized text (name, description) is in locales/*.toml
+#
+# type: "target" | "action"
+# cost_type: "exponential" | "additive"
+# shape: "self" | "single" | "line" | "area" | "ring" | "adjacent"
+# element: "fire" | "ice" | "lightning" | "water" | "poison" | "physical"
+# status: "burning" | "frozen" | "electrified" | "wet" | "poisoned" | "bleeding"
+# movement: "push" | "pull"
+# terrain_create: "generated_wall" | "water_puddle" | "poison_swamp" | "fire_floor"
+# ============================================================
+
+# ============================================================
+# Target Spells
+# ============================================================
+
+[spells.self]
+type      = "target"
+cost_type = "additive"
+base_cost = 0
+shape     = "self"
+range     = 0
+radius    = 0
+
+[spells.single]
+type      = "target"
+cost_type = "additive"
+base_cost = 1
+shape     = "single"
+range     = 5
+radius    = 0
+
+[spells.line]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "line"
+range     = 6
+radius    = 0
+
+[spells.area]
+type      = "target"
+cost_type = "exponential"
+base_cost = 3
+shape     = "area"
+range     = 4
+radius    = 2
+
+[spells.ring]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "ring"
+range     = 4
+radius    = 2
+
+[spells.adjacent]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "adjacent"
+range     = 4
+radius    = 0
+
+# ============================================================
+# Action Spells - Attack
+# ============================================================
+
+[spells.fireball]
+type         = "action"
+cost_type    = "exponential"
+base_cost    = 3
+damage       = 3
+element      = "fire"
+status       = "burning"
+status_turns = 2
+
+  [[spells.fireball.terrain_interactions]]
+  on     = "poison_swamp"
+  result = "plain"
+
+  [[spells.fireball.terrain_interactions]]
+  on     = "thorns"
+  result = "plain"
+
+  [[spells.fireball.status_combos]]
+  if           = "poisoned"
+  remove       = true
+  bonus_damage = 2
+
+[spells.ice]
+type         = "action"
+cost_type    = "exponential"
+base_cost    = 3
+damage       = 2
+element      = "ice"
+status       = "frozen"
+status_turns = 1
+
+  [[spells.ice.terrain_interactions]]
+  on     = "lava"
+  result = "plain"
+
+  [[spells.ice.status_combos]]
+  if           = "burning"
+  remove       = true
+  bonus_damage = 1
+
+[spells.lightning]
+type         = "action"
+cost_type    = "exponential"
+base_cost    = 4
+damage       = 4
+element      = "lightning"
+status       = "electrified"
+status_turns = 1
+
+  [[spells.lightning.terrain_interactions]]
+  on     = "water_puddle"
+  result = "water_puddle"
+
+  [[spells.lightning.status_combos]]
+  if           = "wet"
+  remove       = true
+  bonus_damage = 4
+
+[spells.water]
+type           = "action"
+cost_type      = "additive"
+base_cost      = 2
+damage         = 1
+element        = "water"
+status         = "wet"
+status_turns   = 2
+terrain_create = "water_puddle"
+
+  [[spells.water.terrain_interactions]]
+  on     = "fire_floor"
+  result = "plain"
+
+  [[spells.water.status_combos]]
+  if          = "burning"
+  remove      = true
+  apply       = "wet"
+  apply_turns = 2
+
+[spells.poison]
+type           = "action"
+cost_type      = "additive"
+base_cost      = 2
+damage         = 1
+element        = "poison"
+status         = "poisoned"
+status_turns   = 3
+terrain_create = "poison_swamp"
+
+[spells.slash]
+type         = "action"
+cost_type    = "exponential"
+base_cost    = 2
+damage       = 3
+element      = "physical"
+status       = "bleeding"
+status_turns = 2
+
+  [[spells.slash.status_combos]]
+  if           = "frozen"
+  remove       = true
+  bonus_damage = 3
+
+# ============================================================
+# Action Spells - Utility
+# ============================================================
+
+[spells.heal]
+type      = "action"
+cost_type = "exponential"
+base_cost = 3
+heal      = 3
+
+[spells.push]
+type      = "action"
+cost_type = "additive"
+base_cost = 2
+movement  = "push"
+
+[spells.pull]
+type      = "action"
+cost_type = "additive"
+base_cost = 2
+movement  = "pull"
+
+[spells.wall]
+type           = "action"
+cost_type      = "exponential"
+base_cost      = 3
+terrain_create = "generated_wall"
+clear_targets  = true

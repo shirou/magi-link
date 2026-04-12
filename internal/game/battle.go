@@ -2,12 +2,14 @@ package game
 
 import (
 	"fmt"
+	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/shirou/magi_link/internal/entity"
 	"github.com/shirou/magi_link/internal/hex"
+	"github.com/shirou/magi_link/internal/spell"
 	"github.com/shirou/magi_link/internal/terrain"
 )
 
@@ -17,6 +19,7 @@ type BattlePhase int
 const (
 	PhasePlayerSelect BattlePhase = iota
 	PhasePlayerMove
+	PhaseChainTarget // player built a chain, now picking a hex to cast on
 	PhaseEnemyTurn
 )
 
@@ -24,6 +27,8 @@ const (
 	GridWidth  = 12
 	GridHeight = 10
 )
+
+var colorChainTargetHex = color.RGBA{200, 160, 40, 100}
 
 // BattleState holds all state for a single battle encounter.
 type BattleState struct {
@@ -42,22 +47,33 @@ type BattleState struct {
 	MoveOrigin     hex.Hex
 	HasMoved       bool
 	TurnNumber     int
-	EnemyReachable map[hex.Hex]int // reachable hexes of hovered enemy
+	EnemyReachable map[hex.Hex]int
+
+	// Spell system
+	SpellReg  *spell.Registry
+	Book      *spell.SpellBook
+	Chain     spell.Chain
+	TurnStats *spell.TurnStats
+
+	// Spell UI state
+	HoverBookIdx    int
+	HoverChainIdx   int
+	HoverCast       bool
+	cachedChainCost int // cached per frame to avoid recomputing TotalCost()
 }
 
 // NewBattle creates a new battle with initial setup.
-func NewBattle(screenW, screenH int) *BattleState {
+func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 	grid := hex.NewGrid(GridWidth, GridHeight, 0, 0, 0)
-	// Scale grid to ~62% of screen for smaller hex size
-	scale := 0.62
-	gw := float64(screenW) * scale
-	gh := float64(screenH) * scale
+	// Fit grid into upper area, leaving room for spell panel at bottom
+	gw := float64(screenW) * 0.70
+	gridTop := 30.0
+	gridBottom := float64(screenH) - float64(panelH) - 16
+	gh := gridBottom - gridTop
 	ox := (float64(screenW) - gw) / 2
-	oy := (float64(screenH) - gh) / 2
-	grid.FitInRect(ox, oy, gw, gh)
+	grid.FitInRect(ox, gridTop, gw, gh)
 
 	tm := terrain.NewMap(GridWidth, GridHeight)
-	// Sample terrain for testing
 	tm.Set(hex.OffsetToHex(5, 4), &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
 	tm.Set(hex.OffsetToHex(6, 3), &terrain.Terrain{Type: terrain.TerrainWoodWall, Duration: -1})
 	tm.Set(hex.OffsetToHex(4, 5), &terrain.Terrain{Type: terrain.TerrainWaterPuddle, Duration: -1})
@@ -73,6 +89,15 @@ func NewBattle(screenW, screenH int) *BattleState {
 	enemy2 := entity.NewUnit(3, "Shard", hex.OffsetToHex(9, 6), 40, 0)
 	enemy3 := entity.NewUnit(4, "Chorus", hex.OffsetToHex(7, 7), 25, 0)
 
+	// Initialize spellbook with starter spells (actions first, then targets)
+	book := spell.NewSpellBook()
+	starterSpells := []string{"fireball", "ice", "water", "heal", "single", "self", "line", "area"}
+	for _, id := range starterSpells {
+		if s := reg.Get(id); s != nil {
+			book.Add(s)
+		}
+	}
+
 	return &BattleState{
 		Grid:       grid,
 		TerrainMap: tm,
@@ -80,6 +105,12 @@ func NewBattle(screenW, screenH int) *BattleState {
 		Player:     player,
 		Phase:      PhasePlayerSelect,
 		TurnNumber: 1,
+
+		SpellReg:      reg,
+		Book:          book,
+		TurnStats:     spell.NewTurnStats(),
+		HoverBookIdx:  -1,
+		HoverChainIdx: -1,
 	}
 }
 
@@ -107,12 +138,23 @@ func (b *BattleState) unitAt(h hex.Hex) *entity.Unit {
 // Update processes input and updates battle state.
 func (b *BattleState) Update() {
 	mx, my := ebiten.CursorPosition()
-	b.HoverHex = b.Grid.ScreenToHex(float64(mx), float64(my))
-	b.HoverValid = b.Grid.InBounds(b.HoverHex)
 
-	// Show enemy movement range on hover
+	// Spell UI input (only during select phase — not during targeting)
+	if b.Phase != PhaseChainTarget {
+		b.updateSpellUI()
+	}
+
+	// Hex hover — only outside the panel area
+	if !isInSpellPanel(my) {
+		b.HoverHex = b.Grid.ScreenToHex(float64(mx), float64(my))
+		b.HoverValid = b.Grid.InBounds(b.HoverHex)
+	} else {
+		b.HoverValid = false
+	}
+
+	// Enemy hover reachable (not during chain targeting)
 	b.EnemyReachable = nil
-	if b.HoverValid {
+	if b.HoverValid && b.Phase != PhaseChainTarget {
 		if u := b.unitAt(b.HoverHex); u != nil && !u.IsPlayer {
 			b.EnemyReachable = b.Grid.Reachable(u.Pos, u.MoveRange, b.isBlocked)
 		}
@@ -123,10 +165,14 @@ func (b *BattleState) Update() {
 		b.updatePlayerSelect()
 	case PhasePlayerMove:
 		b.updatePlayerMove()
+	case PhaseChainTarget:
+		b.updateChainTarget()
 	}
 }
 
 func (b *BattleState) updatePlayerSelect() {
+	_, my := ebiten.CursorPosition()
+
 	// Cancel move with Escape
 	if b.HasMoved && inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		b.Player.Pos = b.MoveOrigin
@@ -137,6 +183,11 @@ func (b *BattleState) updatePlayerSelect() {
 	// End turn
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		b.endTurn()
+		return
+	}
+
+	// Skip hex clicks if in spell panel
+	if isInSpellPanel(my) {
 		return
 	}
 
@@ -188,11 +239,47 @@ func (b *BattleState) updatePlayerMove() {
 	}
 }
 
+// updateChainTarget handles hex selection after the player presses Cast.
+func (b *BattleState) updateChainTarget() {
+	// Cancel with right-click or Escape → back to select (chain preserved)
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) ||
+		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		b.Phase = PhasePlayerSelect
+		return
+	}
+
+	// Confirm target with left-click on a valid hex
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
+		b.executeChainAt(b.HoverHex)
+		b.Phase = PhasePlayerSelect
+	}
+}
+
+// executeChainAt deducts mana, records spell usage, and clears the chain.
+// The target hex is stored for the future execution engine.
+func (b *BattleState) executeChainAt(target hex.Hex) {
+	b.Player.UseMana(b.cachedChainCost)
+
+	for _, slot := range b.Chain.Slots {
+		if slot.Spell != nil {
+			b.TurnStats.SpellsUsed[slot.Spell.ID]++
+		}
+	}
+
+	// TODO: pass target hex to the spell execution engine
+	_ = target
+
+	b.Chain.Slots = b.Chain.Slots[:0]
+	b.cachedChainCost = 0
+}
+
 func (b *BattleState) endTurn() {
 	b.HasMoved = false
 	b.SelectedUnit = nil
 	b.Reachable = nil
 	b.MovePath = nil
+	b.Chain.Slots = nil
+	b.TurnStats = spell.NewTurnStats()
 
 	b.TerrainMap.Tick()
 	for _, u := range b.Units {
@@ -228,7 +315,7 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	// 3. Path preview
+	// 4. Path preview
 	if b.MovePath != nil {
 		for i, h := range b.MovePath {
 			if i == 0 {
@@ -238,12 +325,14 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	// 4. Hover highlight
-	if b.HoverValid {
+	// 5. Chain target hover highlight
+	if b.Phase == PhaseChainTarget && b.HoverValid {
+		drawHexHighlight(screen, b.Grid, b.HoverHex, colorChainTargetHex)
+	} else if b.HoverValid {
 		drawHexHighlight(screen, b.Grid, b.HoverHex, colorHover)
 	}
 
-	// 5. Units
+	// 6. Units
 	for _, u := range b.Units {
 		if u.IsDead {
 			continue
@@ -255,13 +344,16 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		drawUnit(screen, b.Grid, u.Pos, clr)
 	}
 
-	// 6. Selected unit outline
+	// 7. Selected unit outline
 	if b.SelectedUnit != nil {
 		sx, sy := b.Grid.HexToScreen(b.SelectedUnit.Pos)
 		drawHexOutline(screen, sx, sy, b.Grid.Size*0.94, 2.5, colorSelected)
 	}
 
-	// 7. HUD
+	// 8. Spell panel
+	b.drawSpellPanel(screen)
+
+	// 9. HUD (on top)
 	b.drawHUD(screen)
 }
 
@@ -282,10 +374,12 @@ func (b *BattleState) drawHUD(screen *ebiten.Image) {
 		}
 	case PhasePlayerMove:
 		controls = "Click: Move  |  Esc/Right-click: Cancel"
+	case PhaseChainTarget:
+		controls = "Click hex to cast chain  |  Esc/Right-click: Cancel"
 	}
 	ebitenutil.DebugPrintAt(screen, controls, 10, 20)
 
-	// Hover info at bottom
+	// Hover info
 	if b.HoverValid {
 		col, row := b.HoverHex.ToOffset()
 		hoverInfo := fmt.Sprintf("Hex (%d, %d)", col, row)
@@ -296,7 +390,7 @@ func (b *BattleState) drawHUD(screen *ebiten.Image) {
 		if u := b.unitAt(b.HoverHex); u != nil {
 			hoverInfo += fmt.Sprintf("  |  %s HP:%d/%d", u.Name, u.HP, u.MaxHP)
 		}
-		ebitenutil.DebugPrintAt(screen, hoverInfo, 10, 700)
+		ebitenutil.DebugPrintAt(screen, hoverInfo, 10, panelY-18)
 	}
 }
 

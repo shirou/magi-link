@@ -1,11 +1,13 @@
 package game
 
 import (
+	"fmt"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/shirou/magi_link/internal/spell"
 )
 
 // GameState represents the current state of the game
@@ -20,18 +22,29 @@ const (
 
 // Game implements ebiten.Game
 type Game struct {
-	state  GameState
-	width  int
-	height int
-	battle *BattleState
+	state    GameState
+	width    int
+	height   int
+	battle   *BattleState
+	spellReg *spell.Registry
 }
 
 // New creates a new Game instance
 func New() *Game {
+	reg, err := spell.LoadEmbedded()
+	if err != nil {
+		panic(fmt.Sprintf("failed to load spells: %v", err))
+	}
+	// Use English locale for debug font compatibility (ASCII only)
+	if err := reg.SetLocale("en"); err != nil {
+		panic(fmt.Sprintf("failed to set locale: %v", err))
+	}
+
 	return &Game{
-		state:  StateTitle,
-		width:  1280,
-		height: 720,
+		state:    StateTitle,
+		width:    1280,
+		height:   720,
+		spellReg: reg,
 	}
 }
 
@@ -40,14 +53,14 @@ func (g *Game) Update() error {
 	switch g.state {
 	case StateTitle:
 		if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-			g.battle = NewBattle(g.width, g.height)
+			g.battle = NewBattle(g.width, g.height, g.spellReg)
 			g.state = StateBattle
 		}
 	case StateBattle:
 		g.battle.Update()
 	case StateGameOver:
 		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
-			g.battle = NewBattle(g.width, g.height)
+			g.battle = NewBattle(g.width, g.height, g.spellReg)
 			g.state = StateBattle
 		}
 	}
