@@ -340,6 +340,72 @@ func TestLocaleFallback(t *testing.T) {
 	}
 }
 
+func TestExponentialCostOverflowProtection(t *testing.T) {
+	s := &SpellDef{
+		ID:       "test",
+		BaseCost: 3,
+		CostType: "exponential",
+	}
+
+	// 40th use: 3 * 2^39 would overflow int32 without protection
+	cost := SlotCost(s, 40)
+	if cost <= 0 {
+		t.Errorf("SlotCost for n=40 should be positive (capped), got %d", cost)
+	}
+	if cost > maxManaCost {
+		t.Errorf("SlotCost for n=40 should be <= maxManaCost, got %d", cost)
+	}
+}
+
+func TestChainMaxSlots(t *testing.T) {
+	chain := &Chain{}
+	s := &SpellDef{ID: "test", BaseCost: 0, CostType: "additive"}
+
+	for i := 0; i < ChainMaxSlots; i++ {
+		if !chain.CanAdd() {
+			t.Fatalf("CanAdd() should be true at slot %d", i)
+		}
+		chain.Slots = append(chain.Slots, &SpellSlot{Spell: s})
+	}
+
+	if chain.CanAdd() {
+		t.Error("CanAdd() should be false at max capacity")
+	}
+}
+
+func TestSlotCostsMatchTotalCost(t *testing.T) {
+	reg, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded failed: %v", err)
+	}
+
+	chain := &Chain{}
+	for _, id := range []string{"area", "fireball", "area", "fireball", "fireball"} {
+		chain.Slots = append(chain.Slots, &SpellSlot{Spell: reg.Get(id)})
+	}
+
+	costs := chain.SlotCosts()
+	sum := 0
+	for _, c := range costs {
+		sum += c
+	}
+	if sum != chain.TotalCost() {
+		t.Errorf("sum of SlotCosts (%d) != TotalCost (%d)", sum, chain.TotalCost())
+	}
+}
+
+func TestLocaleInvalidLang(t *testing.T) {
+	_, err := LoadLocale("../../etc/passwd")
+	if err == nil {
+		t.Error("expected error for path traversal in lang, got nil")
+	}
+
+	_, err = LoadLocale("")
+	if err == nil {
+		t.Error("expected error for empty lang, got nil")
+	}
+}
+
 func TestAllSpellsHaveLocaleText(t *testing.T) {
 	reg, err := LoadEmbedded()
 	if err != nil {

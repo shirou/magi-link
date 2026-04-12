@@ -41,10 +41,15 @@ var (
 	colorCastHov    = color.RGBA{45, 135, 60, 255}
 	colorCastNo     = color.RGBA{65, 30, 30, 255}
 	colorManaWarn   = color.RGBA{230, 55, 55, 255}
-	colorTextWhite  = color.RGBA{220, 220, 230, 255}
-	colorTextDim    = color.RGBA{120, 120, 135, 255}
-	colorCostText   = color.RGBA{180, 180, 80, 255}
 )
+
+// Pre-allocated image for colored text rendering to avoid per-frame GPU allocation.
+var warnTextImg *ebiten.Image
+
+func init() {
+	// "Not enough mana!" = 16 chars × 6px = 96px wide, 16px tall
+	warnTextImg = ebiten.NewImage(96, 16)
+}
 
 // updateSpellUI handles input for the spell panel.
 func (b *BattleState) updateSpellUI() {
@@ -82,15 +87,22 @@ func (b *BattleState) updateSpellUI() {
 		b.HoverCast = true
 	}
 
+	// Cache chain cost for this frame (avoids recomputing in canCast + Draw)
+	b.cachedChainCost = b.Chain.TotalCost()
+
 	// Handle left-click
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		if b.HoverBookIdx >= 0 && b.HoverBookIdx < len(b.Book.Spells) {
-			s := b.Book.Spells[b.HoverBookIdx]
-			b.Chain.Slots = append(b.Chain.Slots, &spell.SpellSlot{Spell: s})
+			if b.Chain.CanAdd() {
+				s := b.Book.Spells[b.HoverBookIdx]
+				b.Chain.Slots = append(b.Chain.Slots, &spell.SpellSlot{Spell: s})
+				b.cachedChainCost = b.Chain.TotalCost()
+			}
 		} else if b.HoverChainIdx >= 0 && b.HoverChainIdx < len(b.Chain.Slots) {
 			idx := b.HoverChainIdx
 			b.Chain.Slots = append(b.Chain.Slots[:idx], b.Chain.Slots[idx+1:]...)
 			b.HoverChainIdx = -1
+			b.cachedChainCost = b.Chain.TotalCost()
 		} else if b.HoverCast && b.canCast() {
 			b.castChain()
 		}
@@ -98,7 +110,8 @@ func (b *BattleState) updateSpellUI() {
 
 	// Keyboard shortcuts
 	if inpututil.IsKeyJustPressed(ebiten.KeyX) && len(b.Chain.Slots) > 0 {
-		b.Chain.Slots = nil
+		b.Chain.Slots = b.Chain.Slots[:0]
+		b.cachedChainCost = 0
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyC) && b.canCast() {
 		b.castChain()
@@ -107,13 +120,12 @@ func (b *BattleState) updateSpellUI() {
 
 // canCast returns true if the chain has spells and mana is sufficient.
 func (b *BattleState) canCast() bool {
-	return len(b.Chain.Slots) > 0 && b.Chain.TotalCost() <= b.Player.Mana
+	return len(b.Chain.Slots) > 0 && b.cachedChainCost <= b.Player.Mana
 }
 
 // castChain executes the spell chain and deducts mana.
 func (b *BattleState) castChain() {
-	cost := b.Chain.TotalCost()
-	b.Player.UseMana(cost)
+	b.Player.UseMana(b.cachedChainCost)
 
 	// Record spells used for passive triggers
 	for _, slot := range b.Chain.Slots {
@@ -122,7 +134,8 @@ func (b *BattleState) castChain() {
 		}
 	}
 
-	b.Chain.Slots = nil
+	b.Chain.Slots = b.Chain.Slots[:0]
+	b.cachedChainCost = 0
 }
 
 // isInSpellPanel returns true if the y coordinate is in the spell panel area.
@@ -132,7 +145,7 @@ func isInSpellPanel(my int) bool {
 
 // drawSpellPanel renders the entire spell panel (spellbook, chain, cast).
 func (b *BattleState) drawSpellPanel(screen *ebiten.Image) {
-	sw, _ := screen.Bounds().Dx(), screen.Bounds().Dy()
+	sw := screen.Bounds().Dx()
 
 	// Panel background
 	vector.DrawFilledRect(screen, 0, panelY, float32(sw), panelH, colorPanelBG, false)
@@ -141,7 +154,7 @@ func (b *BattleState) drawSpellPanel(screen *ebiten.Image) {
 
 	b.drawBookRow(screen)
 	b.drawChainRow(screen)
-	b.drawCastRow(screen)
+	b.drawCastRow(screen, sw)
 }
 
 func (b *BattleState) drawBookRow(screen *ebiten.Image) {
@@ -185,6 +198,9 @@ func (b *BattleState) drawChainRow(screen *ebiten.Image) {
 		return
 	}
 
+	// Compute all slot costs in a single O(n) pass
+	costs := b.Chain.SlotCosts()
+
 	cx := float32(slotsX)
 	for i, slot := range b.Chain.Slots {
 		// Draw arrow between slots
@@ -203,26 +219,23 @@ func (b *BattleState) drawChainRow(screen *ebiten.Image) {
 		name := truncate(text.Name, 9)
 		ebitenutil.DebugPrintAt(screen, name, int(cx)+3, chainRowY+2)
 
-		// Show individual cost
-		cost := b.slotCostAt(i)
-		costStr := fmt.Sprintf("%d", cost)
+		// Show individual cost (from pre-computed array)
+		costStr := fmt.Sprintf("%d", costs[i])
 		ebitenutil.DebugPrintAt(screen, costStr, int(cx)+slotW-len(costStr)*6-3, chainRowY+16)
 
 		cx += slotW + slotGap
 	}
 }
 
-func (b *BattleState) drawCastRow(screen *ebiten.Image) {
-	totalCost := b.Chain.TotalCost()
+func (b *BattleState) drawCastRow(screen *ebiten.Image, screenW int) {
+	totalCost := b.cachedChainCost
 	hasMana := totalCost <= b.Player.Mana
 	hasChain := len(b.Chain.Slots) > 0
 
 	// Cast button
 	castX := float32(slotsX)
 	var btnColor color.RGBA
-	if !hasChain {
-		btnColor = colorCastNo
-	} else if !hasMana {
+	if !hasChain || !hasMana {
 		btnColor = colorCastNo
 	} else if b.HoverCast {
 		btnColor = colorCastHov
@@ -242,66 +255,31 @@ func (b *BattleState) drawCastRow(screen *ebiten.Image) {
 	manaStr := fmt.Sprintf("Mana: %d/%d", b.Player.Mana, b.Player.MaxMana)
 	ebitenutil.DebugPrintAt(screen, manaStr, manaX, castRowY+6)
 
-	// Mana warning
+	// Mana warning (uses pre-allocated image instead of per-frame allocation)
 	if hasChain && !hasMana {
 		warnX := manaX + len(manaStr)*6 + 12
-		drawColoredText(screen, "Not enough mana!", warnX, castRowY+6, colorManaWarn)
+		drawWarnText(screen, "Not enough mana!", warnX, castRowY+6)
 	}
 
 	// Controls hint
-	hintY := castRowY + 6
 	hintStr := "C:Cast  X:Clear"
-	ebitenutil.DebugPrintAt(screen, hintStr, 1280-len(hintStr)*6-16, hintY)
+	ebitenutil.DebugPrintAt(screen, hintStr, screenW-len(hintStr)*6-16, castRowY+6)
 }
 
-// slotCostAt returns the actual cost for the chain slot at index i,
-// considering how many times that spell has appeared before.
-func (b *BattleState) slotCostAt(idx int) int {
-	counts := make(map[string]int)
-	for i, slot := range b.Chain.Slots {
-		if slot.Spell == nil {
-			continue
-		}
-		counts[slot.Spell.ID]++
-		if i == idx {
-			return slotCostCalc(slot.Spell, counts[slot.Spell.ID])
-		}
-	}
-	return 0
-}
-
-func slotCostCalc(s *spell.SpellDef, n int) int {
-	switch s.ParseCostType() {
-	case spell.CostTypeExponential:
-		cost := s.BaseCost
-		for i := 1; i < n; i++ {
-			cost *= 2
-		}
-		return cost
-	case spell.CostTypeAdditive:
-		return s.BaseCost + (n - 1)
-	}
-	return s.BaseCost
-}
-
-// drawColoredText draws text in a specific color using a temporary image overlay.
-func drawColoredText(screen *ebiten.Image, text string, x, y int, clr color.RGBA) {
-	// Draw dark background for contrast, then bright text
-	// DebugPrintAt only supports white, so we use color scale
-	w := len(text) * 6
-	h := 16
-	img := ebiten.NewImage(w, h)
-	ebitenutil.DebugPrintAt(img, text, 0, 0)
+// drawWarnText draws warning text in red using the pre-allocated image.
+func drawWarnText(screen *ebiten.Image, text string, x, y int) {
+	warnTextImg.Clear()
+	ebitenutil.DebugPrintAt(warnTextImg, text, 0, 0)
 
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(float64(x), float64(y))
 	op.ColorScale.Scale(
-		float32(clr.R)/255.0,
-		float32(clr.G)/255.0,
-		float32(clr.B)/255.0,
-		float32(clr.A)/255.0,
+		float32(colorManaWarn.R)/255.0,
+		float32(colorManaWarn.G)/255.0,
+		float32(colorManaWarn.B)/255.0,
+		float32(colorManaWarn.A)/255.0,
 	)
-	screen.DrawImage(img, op)
+	screen.DrawImage(warnTextImg, op)
 }
 
 func truncate(s string, maxLen int) string {

@@ -51,10 +51,11 @@ type BattleState struct {
 	Chain     spell.Chain
 	TurnStats *spell.TurnStats
 
-	// Spell UI hover state
-	HoverBookIdx  int
-	HoverChainIdx int
-	HoverCast     bool
+	// Spell UI state
+	HoverBookIdx   int
+	HoverChainIdx  int
+	HoverCast      bool
+	cachedChainCost int // cached per frame to avoid recomputing TotalCost()
 }
 
 // NewBattle creates a new battle with initial setup.

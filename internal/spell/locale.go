@@ -3,9 +3,13 @@ package spell
 import (
 	"embed"
 	"fmt"
+	"regexp"
 
 	"github.com/BurntSushi/toml"
 )
+
+// validLang matches safe locale identifiers (e.g., "en", "ja", "pt-BR").
+var validLang = regexp.MustCompile(`^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$`)
 
 //go:embed locales
 var embeddedLocales embed.FS
@@ -46,6 +50,9 @@ func LoadLocale(lang string) (*Locale, error) {
 }
 
 func loadSingleLocale(lang string) (*Locale, error) {
+	if !validLang.MatchString(lang) {
+		return nil, fmt.Errorf("invalid locale identifier %q", lang)
+	}
 	path := fmt.Sprintf("locales/%s.toml", lang)
 	data, err := embeddedLocales.ReadFile(path)
 	if err != nil {
