@@ -21,8 +21,8 @@ const (
 )
 
 const (
-	GridWidth  = 11
-	GridHeight = 9
+	GridWidth  = 12
+	GridHeight = 10
 )
 
 // BattleState holds all state for a single battle encounter.
@@ -48,8 +48,8 @@ type BattleState struct {
 // NewBattle creates a new battle with initial setup.
 func NewBattle(screenW, screenH int) *BattleState {
 	grid := hex.NewGrid(GridWidth, GridHeight, 0, 0, 0)
-	// Scale grid to ~70% of screen for comfortable hex size
-	scale := 0.70
+	// Scale grid to ~62% of screen for smaller hex size
+	scale := 0.62
 	gw := float64(screenW) * scale
 	gh := float64(screenH) * scale
 	ox := (float64(screenW) - gw) / 2
