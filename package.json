@@ -1,0 +1,14 @@
+{
+  "name": "magi-link",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Cloudflare deploy tooling for Magi Link (Ebitengine WASM)",
+  "scripts": {
+    "build": "make build",
+    "deploy": "wrangler deploy",
+    "versions:upload": "wrangler versions upload"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
