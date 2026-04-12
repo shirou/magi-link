@@ -21,8 +21,8 @@ const (
 )
 
 const (
-	GridWidth  = 11
-	GridHeight = 9
+	GridWidth  = 12
+	GridHeight = 10
 )
 
 // BattleState holds all state for a single battle encounter.
@@ -36,19 +36,25 @@ type BattleState struct {
 	HoverHex   hex.Hex
 	HoverValid bool
 
-	SelectedUnit *entity.Unit
-	Reachable    map[hex.Hex]int
-	MovePath     []hex.Hex
-	MoveOrigin   hex.Hex
-	HasMoved     bool
-	TurnNumber   int
+	SelectedUnit   *entity.Unit
+	Reachable      map[hex.Hex]int
+	MovePath       []hex.Hex
+	MoveOrigin     hex.Hex
+	HasMoved       bool
+	TurnNumber     int
+	EnemyReachable map[hex.Hex]int // reachable hexes of hovered enemy
 }
 
 // NewBattle creates a new battle with initial setup.
 func NewBattle(screenW, screenH int) *BattleState {
 	grid := hex.NewGrid(GridWidth, GridHeight, 0, 0, 0)
-	padding := 20.0
-	grid.FitInRect(padding, padding, float64(screenW)-2*padding, float64(screenH)-2*padding)
+	// Scale grid to ~62% of screen for smaller hex size
+	scale := 0.62
+	gw := float64(screenW) * scale
+	gh := float64(screenH) * scale
+	ox := (float64(screenW) - gw) / 2
+	oy := (float64(screenH) - gh) / 2
+	grid.FitInRect(ox, oy, gw, gh)
 
 	tm := terrain.NewMap(GridWidth, GridHeight)
 	// Sample terrain for testing
@@ -103,6 +109,14 @@ func (b *BattleState) Update() {
 	mx, my := ebiten.CursorPosition()
 	b.HoverHex = b.Grid.ScreenToHex(float64(mx), float64(my))
 	b.HoverValid = b.Grid.InBounds(b.HoverHex)
+
+	// Show enemy movement range on hover
+	b.EnemyReachable = nil
+	if b.HoverValid {
+		if u := b.unitAt(b.HoverHex); u != nil && !u.IsPlayer {
+			b.EnemyReachable = b.Grid.Reachable(u.Pos, u.MoveRange, b.isBlocked)
+		}
+	}
 
 	switch b.Phase {
 	case PhasePlayerSelect:
@@ -198,7 +212,14 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 	// 1. Grid and terrain
 	drawGrid(screen, b.Grid, b.TerrainMap)
 
-	// 2. Reachable hexes
+	// 2. Enemy hover reachable
+	if b.EnemyReachable != nil {
+		for h := range b.EnemyReachable {
+			drawHexHighlight(screen, b.Grid, h, colorEnemyReachable)
+		}
+	}
+
+	// 3. Reachable hexes (player)
 	if b.Reachable != nil {
 		for h := range b.Reachable {
 			if h != b.Player.Pos {
