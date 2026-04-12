@@ -56,6 +56,17 @@ func (t *Terrain) TypeName() string {
 	return "plain"
 }
 
+// ParseTerrainType converts a string identifier back to TerrainType.
+// Returns TerrainPlain if the name is unknown.
+func ParseTerrainType(name string) TerrainType {
+	for t, n := range terrainTypeNames {
+		if n == name {
+			return t
+		}
+	}
+	return TerrainPlain
+}
+
 // IsWall returns true if the terrain blocks movement and LoS
 func (t *Terrain) IsWall() bool {
 	switch t.Type {
