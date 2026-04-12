@@ -52,13 +52,8 @@ func NewTurnStats() *TurnStats {
 }
 
 // Chain represents a sequence of spells to cast.
-// Spells are added in Action → Target order:
-//
-//	[Fireball][Single] > [Ice][Area]
-//	 action    target     action target
-//
-// Each action defines WHAT happens; the following target defines WHERE.
-// The output targets of one pair relay into the next pair.
+// It is a free-form flat list with no ordering constraint.
+// The player builds it freely, then selects a target hex to execute.
 type Chain struct {
 	Slots []*SpellSlot
 }
@@ -71,21 +66,6 @@ const ChainMaxSlots = 20
 // SpellSlot is one slot in the chain.
 type SpellSlot struct {
 	Spell *SpellDef
-}
-
-// NextExpected returns the SpellType that should be added next to
-// maintain Action → Target alternation.
-// Empty chain or last spell is Target → expects Action.
-// Last spell is Action → expects Target.
-func (c *Chain) NextExpected() SpellType {
-	if len(c.Slots) == 0 {
-		return SpellTypeAction
-	}
-	last := c.Slots[len(c.Slots)-1]
-	if last.Spell != nil && last.Spell.IsAction() {
-		return SpellTypeTarget
-	}
-	return SpellTypeAction
 }
 
 // CanAdd returns true if another spell can be added to the chain.

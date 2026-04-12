@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -18,6 +19,7 @@ type BattlePhase int
 const (
 	PhasePlayerSelect BattlePhase = iota
 	PhasePlayerMove
+	PhaseChainTarget // player built a chain, now picking a hex to cast on
 	PhaseEnemyTurn
 )
 
@@ -25,6 +27,8 @@ const (
 	GridWidth  = 12
 	GridHeight = 10
 )
+
+var colorChainTargetHex = color.RGBA{200, 160, 40, 100}
 
 // BattleState holds all state for a single battle encounter.
 type BattleState struct {
@@ -52,9 +56,9 @@ type BattleState struct {
 	TurnStats *spell.TurnStats
 
 	// Spell UI state
-	HoverBookIdx   int
-	HoverChainIdx  int
-	HoverCast      bool
+	HoverBookIdx    int
+	HoverChainIdx   int
+	HoverCast       bool
 	cachedChainCost int // cached per frame to avoid recomputing TotalCost()
 }
 
@@ -135,8 +139,10 @@ func (b *BattleState) unitAt(h hex.Hex) *entity.Unit {
 func (b *BattleState) Update() {
 	mx, my := ebiten.CursorPosition()
 
-	// Always update spell UI (hover tracking, input)
-	b.updateSpellUI()
+	// Spell UI input (only during select phase — not during targeting)
+	if b.Phase != PhaseChainTarget {
+		b.updateSpellUI()
+	}
 
 	// Hex hover — only outside the panel area
 	if !isInSpellPanel(my) {
@@ -146,9 +152,9 @@ func (b *BattleState) Update() {
 		b.HoverValid = false
 	}
 
-	// Enemy hover reachable
+	// Enemy hover reachable (not during chain targeting)
 	b.EnemyReachable = nil
-	if b.HoverValid {
+	if b.HoverValid && b.Phase != PhaseChainTarget {
 		if u := b.unitAt(b.HoverHex); u != nil && !u.IsPlayer {
 			b.EnemyReachable = b.Grid.Reachable(u.Pos, u.MoveRange, b.isBlocked)
 		}
@@ -159,6 +165,8 @@ func (b *BattleState) Update() {
 		b.updatePlayerSelect()
 	case PhasePlayerMove:
 		b.updatePlayerMove()
+	case PhaseChainTarget:
+		b.updateChainTarget()
 	}
 }
 
@@ -231,6 +239,40 @@ func (b *BattleState) updatePlayerMove() {
 	}
 }
 
+// updateChainTarget handles hex selection after the player presses Cast.
+func (b *BattleState) updateChainTarget() {
+	// Cancel with right-click or Escape → back to select (chain preserved)
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) ||
+		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		b.Phase = PhasePlayerSelect
+		return
+	}
+
+	// Confirm target with left-click on a valid hex
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
+		b.executeChainAt(b.HoverHex)
+		b.Phase = PhasePlayerSelect
+	}
+}
+
+// executeChainAt deducts mana, records spell usage, and clears the chain.
+// The target hex is stored for the future execution engine.
+func (b *BattleState) executeChainAt(target hex.Hex) {
+	b.Player.UseMana(b.cachedChainCost)
+
+	for _, slot := range b.Chain.Slots {
+		if slot.Spell != nil {
+			b.TurnStats.SpellsUsed[slot.Spell.ID]++
+		}
+	}
+
+	// TODO: pass target hex to the spell execution engine
+	_ = target
+
+	b.Chain.Slots = b.Chain.Slots[:0]
+	b.cachedChainCost = 0
+}
+
 func (b *BattleState) endTurn() {
 	b.HasMoved = false
 	b.SelectedUnit = nil
@@ -283,8 +325,10 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	// 5. Hover highlight
-	if b.HoverValid {
+	// 5. Chain target hover highlight
+	if b.Phase == PhaseChainTarget && b.HoverValid {
+		drawHexHighlight(screen, b.Grid, b.HoverHex, colorChainTargetHex)
+	} else if b.HoverValid {
 		drawHexHighlight(screen, b.Grid, b.HoverHex, colorHover)
 	}
 
@@ -330,6 +374,8 @@ func (b *BattleState) drawHUD(screen *ebiten.Image) {
 		}
 	case PhasePlayerMove:
 		controls = "Click: Move  |  Esc/Right-click: Cancel"
+	case PhaseChainTarget:
+		controls = "Click hex to cast chain  |  Esc/Right-click: Cancel"
 	}
 	ebitenutil.DebugPrintAt(screen, controls, 10, 20)
 

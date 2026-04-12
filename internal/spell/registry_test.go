@@ -373,30 +373,6 @@ func TestChainMaxSlots(t *testing.T) {
 	}
 }
 
-func TestChainNextExpected(t *testing.T) {
-	action := &SpellDef{ID: "fireball", Type: "action"}
-	target := &SpellDef{ID: "single", Type: "target"}
-
-	chain := &Chain{}
-
-	// Empty chain → expect Action first
-	if chain.NextExpected() != SpellTypeAction {
-		t.Error("empty chain should expect Action")
-	}
-
-	// After Action → expect Target
-	chain.Slots = append(chain.Slots, &SpellSlot{Spell: action})
-	if chain.NextExpected() != SpellTypeTarget {
-		t.Error("after Action should expect Target")
-	}
-
-	// After Target → expect Action again
-	chain.Slots = append(chain.Slots, &SpellSlot{Spell: target})
-	if chain.NextExpected() != SpellTypeAction {
-		t.Error("after Target should expect Action")
-	}
-}
-
 func TestSlotCostsMatchTotalCost(t *testing.T) {
 	reg, err := LoadEmbedded()
 	if err != nil {
