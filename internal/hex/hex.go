@@ -89,17 +89,17 @@ func (h Hex) Area(radius int) []Hex {
 	return results
 }
 
-// ToPixel converts hex to pixel coordinates (flat-top layout)
+// ToPixel converts hex to pixel coordinates (pointy-top layout)
 func (h Hex) ToPixel(size float64) (float64, float64) {
-	x := size * (3.0 / 2.0 * float64(h.Q))
-	y := size * (math.Sqrt(3)/2*float64(h.Q) + math.Sqrt(3)*float64(h.R))
+	x := size * (math.Sqrt(3)*float64(h.Q) + math.Sqrt(3)/2.0*float64(h.R))
+	y := size * (3.0 / 2.0 * float64(h.R))
 	return x, y
 }
 
-// FromPixel converts pixel to nearest hex (flat-top layout)
+// FromPixel converts pixel to nearest hex (pointy-top layout)
 func FromPixel(x, y, size float64) Hex {
-	q := (2.0 / 3.0 * x) / size
-	r := (-1.0/3.0*x + math.Sqrt(3)/3.0*y) / size
+	q := (math.Sqrt(3)/3.0*x - 1.0/3.0*y) / size
+	r := (2.0 / 3.0 * y) / size
 	return hexRound(q, r, -q-r)
 }
 
@@ -193,4 +193,157 @@ func hexLerp(a, b Hex, t float64) Hex {
 		float64(a.R)+float64(b.R-a.R)*t,
 		float64(a.S)+float64(b.S-a.S)*t,
 	)
+}
+
+// OffsetToHex converts odd-r offset coordinates to cube coordinates.
+func OffsetToHex(col, row int) Hex {
+	q := col - (row-(row&1))/2
+	r := row
+	return NewHex(q, r)
+}
+
+// ToOffset converts cube coordinates to odd-r offset coordinates.
+func (h Hex) ToOffset() (col, row int) {
+	col = h.Q + (h.R-(h.R&1))/2
+	row = h.R
+	return
+}
+
+// AllHexes returns all hexes within grid bounds in row-major order.
+func (g *Grid) AllHexes() []Hex {
+	hexes := make([]Hex, 0, g.Width*g.Height)
+	for row := 0; row < g.Height; row++ {
+		for col := 0; col < g.Width; col++ {
+			hexes = append(hexes, OffsetToHex(col, row))
+		}
+	}
+	return hexes
+}
+
+// FitInRect adjusts Size, OffX, OffY to fit and center the grid within a rectangle.
+func (g *Grid) FitInRect(rx, ry, rw, rh float64) {
+	allHexes := g.AllHexes()
+	if len(allHexes) == 0 {
+		return
+	}
+
+	var minX, maxX, minY, maxY float64
+	for i, h := range allHexes {
+		x, y := h.ToPixel(1.0)
+		if i == 0 {
+			minX, maxX, minY, maxY = x, x, y, y
+		} else {
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
+	}
+
+	// Pointy-top hex extent from center: sqrt(3)/2 horizontally, 1.0 vertically
+	unitW := (maxX - minX) + math.Sqrt(3)
+	unitH := (maxY - minY) + 2.0
+
+	g.Size = math.Min(rw/unitW, rh/unitH)
+	centerX := (minX + maxX) / 2.0 * g.Size
+	centerY := (minY + maxY) / 2.0 * g.Size
+
+	g.OffX = rx + rw/2.0 - centerX
+	g.OffY = ry + rh/2.0 - centerY
+}
+
+// Reachable returns all hexes reachable within moveRange steps via BFS.
+// blocked reports whether a hex is impassable. Returns a map of hex to distance.
+func (g *Grid) Reachable(start Hex, moveRange int, blocked func(Hex) bool) map[Hex]int {
+	visited := map[Hex]int{start: 0}
+	frontier := []Hex{start}
+
+	for dist := 0; dist < moveRange; dist++ {
+		var next []Hex
+		for _, h := range frontier {
+			for _, n := range h.Neighbors() {
+				if _, seen := visited[n]; seen {
+					continue
+				}
+				if !g.InBounds(n) {
+					continue
+				}
+				if blocked != nil && blocked(n) {
+					continue
+				}
+				visited[n] = dist + 1
+				next = append(next, n)
+			}
+		}
+		frontier = next
+	}
+
+	return visited
+}
+
+// FindPath returns the shortest path from start to goal using A*.
+// Returns nil if no path found.
+func (g *Grid) FindPath(start, goal Hex, blocked func(Hex) bool) []Hex {
+	if start == goal {
+		return []Hex{start}
+	}
+
+	type node struct {
+		hex      Hex
+		priority int
+	}
+
+	cameFrom := map[Hex]Hex{}
+	cost := map[Hex]int{start: 0}
+	frontier := []node{{start, 0}}
+
+	for len(frontier) > 0 {
+		best := 0
+		for i := 1; i < len(frontier); i++ {
+			if frontier[i].priority < frontier[best].priority {
+				best = i
+			}
+		}
+		cur := frontier[best].hex
+		frontier[best] = frontier[len(frontier)-1]
+		frontier = frontier[:len(frontier)-1]
+
+		if cur == goal {
+			path := []Hex{goal}
+			h := goal
+			for h != start {
+				h = cameFrom[h]
+				path = append(path, h)
+			}
+			for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+				path[i], path[j] = path[j], path[i]
+			}
+			return path
+		}
+
+		for _, next := range cur.Neighbors() {
+			if !g.InBounds(next) {
+				continue
+			}
+			if blocked != nil && blocked(next) {
+				continue
+			}
+			newCost := cost[cur] + 1
+			if old, ok := cost[next]; !ok || newCost < old {
+				cost[next] = newCost
+				frontier = append(frontier, node{next, newCost + next.Distance(goal)})
+				cameFrom[next] = cur
+			}
+		}
+	}
+
+	return nil
 }

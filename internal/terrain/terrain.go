@@ -92,8 +92,12 @@ func (m *Map) Tick() {
 	}
 }
 
-// HasLineOfSight returns true if there are no walls between two hexes
+// HasLineOfSight returns true if there are no walls between two hexes.
+// Adjacent hexes (distance <= 1) always have line of sight regardless of walls.
 func (m *Map) HasLineOfSight(from, to hex.Hex) bool {
+	if from.Distance(to) <= 1 {
+		return true
+	}
 	line := from.LineTo(to)
 	for _, h := range line[1 : len(line)-1] { // exclude endpoints
 		if m.Get(h).IsWall() {
