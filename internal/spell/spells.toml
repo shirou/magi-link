@@ -142,13 +142,14 @@ radius    = 5
 # ============================================================
 
 [spells.fireball]
-type         = "action"
-cost_type    = "exponential"
-base_cost    = 3
-damage       = 3
-element      = "fire"
-status       = "burning"
-status_turns = 2
+type           = "action"
+cost_type      = "exponential"
+base_cost      = 3
+damage         = 3
+element        = "fire"
+status         = "burning"
+status_turns   = 2
+explode_radius = 1
 
   [[spells.fireball.terrain_interactions]]
   on     = "poison_swamp"

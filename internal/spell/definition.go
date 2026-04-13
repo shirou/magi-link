@@ -58,12 +58,13 @@ type SpellDef struct {
 	Radius int         `toml:"radius"`
 
 	// --- Action spell fields ---
-	Damage      int     `toml:"damage"`
-	Heal        int     `toml:"heal"`
-	Element     Element `toml:"element"`
-	Status      string  `toml:"status"`       // status effect to apply
-	StatusTurns int     `toml:"status_turns"`  // duration of the status
-	Movement    string  `toml:"movement"`      // "push" | "pull"
+	Damage        int     `toml:"damage"`
+	Heal          int     `toml:"heal"`
+	Element       Element `toml:"element"`
+	Status        string  `toml:"status"`        // status effect to apply
+	StatusTurns   int     `toml:"status_turns"`  // duration of the status
+	Movement      string  `toml:"movement"`      // "push" | "pull"
+	ExplodeRadius int     `toml:"explode_radius"` // >0 = spell explodes on hit with this radius
 
 	// --- Terrain ---
 	TerrainCreate string `toml:"terrain_create"` // terrain type to create on target hex

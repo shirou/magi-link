@@ -127,6 +127,7 @@ type spellSpec struct {
 	Stacking      string            `toml:"stacking"`
 	StackingField string            `toml:"stacking_field"`
 	StackingValue int               `toml:"stacking_value"`
+	ExplodeRadius int               `toml:"explode_radius"`
 }
 
 type expectedSpec struct {
@@ -206,6 +207,7 @@ func buildTestSpells(reg *spell.Registry, specs []spellSpec) ([]*spell.SpellDef,
 			Stacking:      s.Stacking,
 			StackingField: s.StackingField,
 			StackingValue: s.StackingValue,
+			ExplodeRadius: s.ExplodeRadius,
 		})
 	}
 	return spells, nil
