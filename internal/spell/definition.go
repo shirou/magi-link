@@ -4,12 +4,23 @@ package spell
 type TargetShape string
 
 const (
-	ShapeSelf     TargetShape = "self"
-	ShapeSingle   TargetShape = "single"
-	ShapeLine     TargetShape = "line"
-	ShapeArea     TargetShape = "area"
-	ShapeRing     TargetShape = "ring"
-	ShapeAdjacent TargetShape = "adjacent"
+	ShapeSelf          TargetShape = "self"
+	ShapeSingle        TargetShape = "single"
+	ShapeLine          TargetShape = "line"
+	ShapeArea          TargetShape = "area"
+	ShapeRing          TargetShape = "ring"
+	ShapeAdjacent      TargetShape = "adjacent"
+	ShapeWeakest       TargetShape = "weakest"
+	ShapeAlly          TargetShape = "ally"
+	ShapeTerrainFilter TargetShape = "terrain_filter"
+
+	// Modifier shapes (bucket-relay model): these transform the running
+	// LinkState without directly adding to Targets, or set transient
+	// flags that alter the next action step.
+	Shape3Way   TargetShape = "3way"   // origin transformer: 1 → 3 adjacent origins
+	ShapePierce TargetShape = "pierce" // flag: next line walks through obstacles
+	ShapeHoming TargetShape = "homing" // origin override: snap to nearest enemy
+	ShapeBounce TargetShape = "bounce" // flag: next line reflects off walls
 )
 
 // Element represents an elemental affinity.
@@ -53,18 +64,28 @@ type SpellDef struct {
 	Shape  TargetShape `toml:"shape"`
 	Range  int         `toml:"range"`
 	Radius int         `toml:"radius"`
+	Pierce bool        `toml:"pierce"` // line spells: walk through walls/units up to max range
 
 	// --- Action spell fields ---
-	Damage      int     `toml:"damage"`
-	Heal        int     `toml:"heal"`
-	Element     Element `toml:"element"`
-	Status      string  `toml:"status"`       // status effect to apply
-	StatusTurns int     `toml:"status_turns"`  // duration of the status
-	Movement    string  `toml:"movement"`      // "push" | "pull"
+	Damage        int     `toml:"damage"`
+	Heal          int     `toml:"heal"`
+	Element       Element `toml:"element"`
+	Status        string  `toml:"status"`        // status effect to apply
+	StatusTurns   int     `toml:"status_turns"`  // duration of the status
+	Movement      string  `toml:"movement"`      // "push" | "pull"
+	ExplodeRadius int     `toml:"explode_radius"` // >0 = spell explodes on hit with this radius
 
 	// --- Terrain ---
 	TerrainCreate string `toml:"terrain_create"` // terrain type to create on target hex
 	ClearTargets  bool   `toml:"clear_targets"`  // clear target list after execution
+
+	// --- Target: terrain filter ---
+	Filter string `toml:"filter"` // terrain type name to match (for terrain_filter shape)
+
+	// --- Same-type stacking ---
+	Stacking      string `toml:"stacking"`       // "increment" | "none" | "full" (default: "none")
+	StackingField string `toml:"stacking_field"`  // which field to increment: "radius" | "range"
+	StackingValue int    `toml:"stacking_value"`  // increment per extra same-shape use
 
 	// --- Interactions ---
 	TerrainInteractions []TerrainInteraction `toml:"terrain_interactions"`

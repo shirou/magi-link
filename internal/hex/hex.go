@@ -142,6 +142,32 @@ func (g *Grid) ScreenToHex(x, y float64) Hex {
 	return FromPixel(x-g.OffX, y-g.OffY, g.Size)
 }
 
+// AngleToDirection converts a screen-space delta (dx, dy with Y-down)
+// to the nearest hex direction (0-5) for pointy-top layout.
+func AngleToDirection(dx, dy float64) int {
+	angle := math.Atan2(-dy, dx) // negate dy because screen Y is down
+	if angle < 0 {
+		angle += 2 * math.Pi
+	}
+	// Each direction covers a 60° wedge; dir 0 is centered at 330°.
+	// Offset by 30° so wedge boundaries align.
+	idx := int(math.Round((angle+math.Pi/6)/(math.Pi/3))) % 6
+	return idx
+}
+
+// LineInDirection returns hexes from origin in direction dir,
+// up to maxDist steps. Does not include the origin hex.
+func LineInDirection(origin Hex, dir int, maxDist int) []Hex {
+	dir = ((dir % 6) + 6) % 6
+	hexes := make([]Hex, 0, maxDist)
+	cur := origin
+	for i := 0; i < maxDist; i++ {
+		cur = cur.Direction(dir)
+		hexes = append(hexes, cur)
+	}
+	return hexes
+}
+
 // --- helpers ---
 
 var directions = []Hex{

@@ -5,10 +5,30 @@
 # type: "target" | "action"
 # cost_type: "exponential" | "additive"
 # shape: "self" | "single" | "line" | "area" | "ring" | "adjacent"
+#        | "weakest" | "ally" | "terrain_filter"
+#        | "3way" | "pierce" | "homing" | "bounce"
 # element: "fire" | "ice" | "lightning" | "water" | "poison" | "physical"
 # status: "burning" | "frozen" | "electrified" | "wet" | "poisoned" | "bleeding"
 # movement: "push" | "pull"
 # terrain_create: "generated_wall" | "water_puddle" | "poison_swamp" | "fire_floor"
+# filter: terrain type name for terrain_filter shape
+# pierce: line spells walk through walls/units up to max range
+#
+# stacking: "none" (default) | "increment" | "full"
+#   Controls same-type stacking degradation.
+#   "none"      = 2nd+ use has no effect
+#   "increment" = 2nd+ use adds stacking_value to stacking_field
+#   "full"      = 2nd+ use has full effect (no degradation)
+#
+# Bucket-relay model:
+#   Each target-type spell transforms a running (Origins, Targets, Hexes,
+#   Flags) state. Action-type shapes like `line` walk from each origin and
+#   set the impact hex as the new origin, so subsequent spells fire from
+#   the impact point. Modifier shapes (self, single, area, ring, adjacent,
+#   weakest, ally, terrain_filter) add to Targets without moving Origins.
+#   Origin-transformer shapes (3way, homing) override Origins directly.
+#   Flag shapes (pierce, bounce) set transient flags consumed by the next
+#   action step.
 # ============================================================
 
 # ============================================================
@@ -22,6 +42,7 @@ base_cost = 0
 shape     = "self"
 range     = 0
 radius    = 0
+stacking  = "none"
 
 [spells.single]
 type      = "target"
@@ -30,30 +51,40 @@ base_cost = 1
 shape     = "single"
 range     = 5
 radius    = 0
+stacking  = "none"
 
 [spells.line]
-type      = "target"
-cost_type = "additive"
-base_cost = 2
-shape     = "line"
-range     = 6
-radius    = 0
+type           = "target"
+cost_type      = "additive"
+base_cost      = 2
+shape          = "line"
+range          = 6
+radius         = 0
+stacking       = "increment"
+stacking_field = "range"
+stacking_value = 1
 
 [spells.area]
-type      = "target"
-cost_type = "exponential"
-base_cost = 3
-shape     = "area"
-range     = 4
-radius    = 2
+type           = "target"
+cost_type      = "exponential"
+base_cost      = 3
+shape          = "area"
+range          = 4
+radius         = 2
+stacking       = "increment"
+stacking_field = "radius"
+stacking_value = 1
 
 [spells.ring]
-type      = "target"
-cost_type = "additive"
-base_cost = 2
-shape     = "ring"
-range     = 4
-radius    = 2
+type           = "target"
+cost_type      = "additive"
+base_cost      = 2
+shape          = "ring"
+range          = 4
+radius         = 2
+stacking       = "increment"
+stacking_field = "radius"
+stacking_value = 1
 
 [spells.adjacent]
 type      = "target"
@@ -62,19 +93,124 @@ base_cost = 2
 shape     = "adjacent"
 range     = 4
 radius    = 0
+stacking  = "none"
+
+[spells.weakest]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "weakest"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+[spells.ally]
+type      = "target"
+cost_type = "additive"
+base_cost = 1
+shape     = "ally"
+range     = 5
+radius    = 0
+stacking  = "none"
+
+[spells.fire_filter]
+type      = "target"
+cost_type = "exponential"
+base_cost = 3
+shape     = "terrain_filter"
+filter    = "fire_floor"
+range     = 0
+radius    = 5
+
+[spells.poison_filter]
+type      = "target"
+cost_type = "exponential"
+base_cost = 3
+shape     = "terrain_filter"
+filter    = "poison_swamp"
+range     = 0
+radius    = 5
+
+[spells.electric_filter]
+type      = "target"
+cost_type = "exponential"
+base_cost = 4
+shape     = "terrain_filter"
+filter    = "electric_floor"
+range     = 0
+radius    = 6
+
+[spells.thorns_filter]
+type      = "target"
+cost_type = "exponential"
+base_cost = 3
+shape     = "terrain_filter"
+filter    = "thorns"
+range     = 0
+radius    = 5
+
+# ============================================================
+# Modifier Spells (bucket-relay origin/flag transformers)
+# ============================================================
+
+# 3way expands each current origin into 3 adjacent hexes, one step
+# in direction dir-1, dir, dir+1. Used before a line-type spell to
+# fire three parallel lines.
+[spells.3way]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "3way"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# pierce sets a transient flag: the next line spell walks through
+# walls and units up to its full range.
+[spells.pierce]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "pierce"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# homing snaps each current origin to the nearest living enemy. The
+# next action fires from those enemy positions.
+[spells.homing]
+type      = "target"
+cost_type = "additive"
+base_cost = 3
+shape     = "homing"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# bounce sets a transient flag: the next line spell reflects once
+# when it hits a wall (direction rotated 180°).
+[spells.bounce]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "bounce"
+range     = 0
+radius    = 0
+stacking  = "none"
 
 # ============================================================
 # Action Spells - Attack
 # ============================================================
 
 [spells.fireball]
-type         = "action"
-cost_type    = "exponential"
-base_cost    = 3
-damage       = 3
-element      = "fire"
-status       = "burning"
-status_turns = 2
+type           = "action"
+cost_type      = "exponential"
+base_cost      = 3
+damage         = 3
+element        = "fire"
+status         = "burning"
+status_turns   = 2
+explode_radius = 1
 
   [[spells.fireball.terrain_interactions]]
   on     = "poison_swamp"

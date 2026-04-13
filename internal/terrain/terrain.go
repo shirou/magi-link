@@ -24,10 +24,47 @@ const (
 	TerrainCliff
 )
 
+// terrainTypeNames maps TerrainType to its string identifier.
+// Used for TOML filter matching and display.
+var terrainTypeNames = map[TerrainType]string{
+	TerrainPlain:         "plain",
+	TerrainRock:          "rock",
+	TerrainStone:         "stone",
+	TerrainDirtWall:      "dirt_wall",
+	TerrainWoodWall:      "wood_wall",
+	TerrainGeneratedWall: "generated_wall",
+	TerrainLava:          "lava",
+	TerrainPoisonSwamp:   "poison_swamp",
+	TerrainThorns:        "thorns",
+	TerrainElectricFloor: "electric_floor",
+	TerrainFireFloor:     "fire_floor",
+	TerrainWaterPuddle:   "water_puddle",
+	TerrainCliff:         "cliff",
+}
+
 // Terrain represents the state of a single hex cell
 type Terrain struct {
 	Type       TerrainType
 	Duration   int // -1 = permanent, 0 = expired, >0 = turns remaining
+}
+
+// TypeName returns the string identifier for this terrain's type.
+func (t *Terrain) TypeName() string {
+	if name, ok := terrainTypeNames[t.Type]; ok {
+		return name
+	}
+	return "plain"
+}
+
+// ParseTerrainType converts a string identifier back to TerrainType.
+// Returns TerrainPlain if the name is unknown.
+func ParseTerrainType(name string) TerrainType {
+	for t, n := range terrainTypeNames {
+		if n == name {
+			return t
+		}
+	}
+	return TerrainPlain
 }
 
 // IsWall returns true if the terrain blocks movement and LoS
