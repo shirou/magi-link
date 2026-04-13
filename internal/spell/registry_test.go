@@ -10,8 +10,8 @@ func TestLoadEmbedded(t *testing.T) {
 		t.Fatalf("LoadEmbedded failed: %v", err)
 	}
 
-	if reg.Count() != 22 {
-		t.Errorf("expected 22 spells, got %d", reg.Count())
+	if reg.Count() != 26 {
+		t.Errorf("expected 26 spells, got %d", reg.Count())
 		for _, s := range reg.All() {
 			t.Logf("  %s (%s)", s.ID, s.Type)
 		}
@@ -25,8 +25,8 @@ func TestTargetSpells(t *testing.T) {
 	}
 
 	targets := reg.Targets()
-	if len(targets) != 12 {
-		t.Errorf("expected 12 target spells, got %d", len(targets))
+	if len(targets) != 16 {
+		t.Errorf("expected 16 target spells, got %d", len(targets))
 	}
 
 	expectedTargets := map[string]TargetShape{
@@ -42,6 +42,10 @@ func TestTargetSpells(t *testing.T) {
 		"poison_filter":   ShapeTerrainFilter,
 		"electric_filter": ShapeTerrainFilter,
 		"thorns_filter":   ShapeTerrainFilter,
+		"3way":            Shape3Way,
+		"pierce":          ShapePierce,
+		"homing":          ShapeHoming,
+		"bounce":          ShapeBounce,
 	}
 	for _, s := range targets {
 		expected, ok := expectedTargets[s.ID]

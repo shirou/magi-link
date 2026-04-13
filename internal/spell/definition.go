@@ -13,6 +13,14 @@ const (
 	ShapeWeakest       TargetShape = "weakest"
 	ShapeAlly          TargetShape = "ally"
 	ShapeTerrainFilter TargetShape = "terrain_filter"
+
+	// Modifier shapes (bucket-relay model): these transform the running
+	// LinkState without directly adding to Targets, or set transient
+	// flags that alter the next action step.
+	Shape3Way   TargetShape = "3way"   // origin transformer: 1 → 3 adjacent origins
+	ShapePierce TargetShape = "pierce" // flag: next line walks through obstacles
+	ShapeHoming TargetShape = "homing" // origin override: snap to nearest enemy
+	ShapeBounce TargetShape = "bounce" // flag: next line reflects off walls
 )
 
 // Element represents an elemental affinity.
@@ -56,6 +64,7 @@ type SpellDef struct {
 	Shape  TargetShape `toml:"shape"`
 	Range  int         `toml:"range"`
 	Radius int         `toml:"radius"`
+	Pierce bool        `toml:"pierce"` // line spells: walk through walls/units up to max range
 
 	// --- Action spell fields ---
 	Damage        int     `toml:"damage"`

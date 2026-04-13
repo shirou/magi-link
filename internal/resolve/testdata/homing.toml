@@ -1,0 +1,43 @@
+# homing snaps origins to the nearest living enemy.
+
+name        = "homing snaps origin to nearest enemy"
+description = "A far and near enemy exist; homing selects the near one"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 0]
+hp     = 100
+player = true
+
+[[battlefield.units]]
+id     = 10
+name   = "Near"
+pos    = [3, 0]
+hp     = 30
+player = false
+
+[[battlefield.units]]
+id     = 11
+name   = "Far"
+pos    = [15, 0]
+hp     = 30
+player = false
+
+[input]
+caster    = [0, 0]
+clicked   = [0, 0]
+direction = 0
+
+[[input.spells]]
+ref = "homing"
+
+[expected]
+hex_count      = 1
+target_count   = 1
+contains_units = [10]
+excludes_units = [11]

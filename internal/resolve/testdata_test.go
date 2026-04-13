@@ -1,6 +1,6 @@
 package resolve
 
-// TOML-driven test case format for target resolution.
+// TOML-driven test case format for link (bucket-relay) resolution.
 //
 // Each file in testdata/*.toml defines a single test case. The test
 // TestResolveFromTestdata discovers all files in testdata/ and runs
@@ -38,23 +38,19 @@ package resolve
 //   # the loaded registry (spells.toml), or provide inline fields for
 //   # custom edge-case definitions.
 //   [[input.spells]]
-//   ref = "single"       # reference by ID
+//   ref = "single"
 //
 //   [[input.spells]]
-//   # inline (when ref is empty) — all SpellDef fields supported
-//   id             = "custom_line_3"
-//   type           = "target"
-//   shape          = "line"
-//   range          = 3
-//   stacking       = "increment"
-//   stacking_field = "range"
-//   stacking_value = 1
+//   id    = "custom_line"
+//   type  = "target"
+//   shape = "line"
+//   range = 3
 //
 //   [expected]
 //   hex_count      = 1           # optional: exact count of result hexes
 //   hex_count_min  = 3           # optional: minimum (inclusive)
 //   hex_count_max  = 10          # optional: maximum (inclusive)
-//   target_count   = 2           # optional: exact count of targets (with units)
+//   target_count   = 2           # optional: exact count of targets
 //   contains_hexes = [[4, 4]]    # must contain these offset coords
 //   excludes_hexes = [[0, 0]]    # must NOT contain these offset coords
 //   contains_units = [10]        # must contain these unit IDs
@@ -123,6 +119,7 @@ type spellSpec struct {
 	Shape         spell.TargetShape `toml:"shape"`
 	Range         int               `toml:"range"`
 	Radius        int               `toml:"radius"`
+	Pierce        bool              `toml:"pierce"`
 	Filter        string            `toml:"filter"`
 	Stacking      string            `toml:"stacking"`
 	StackingField string            `toml:"stacking_field"`
@@ -196,13 +193,13 @@ func buildTestSpells(reg *spell.Registry, specs []spellSpec) ([]*spell.SpellDef,
 			spells = append(spells, def)
 			continue
 		}
-		// inline
 		spells = append(spells, &spell.SpellDef{
 			ID:            s.ID,
 			Type:          s.Type,
 			Shape:         s.Shape,
 			Range:         s.Range,
 			Radius:        s.Radius,
+			Pierce:        s.Pierce,
 			Filter:        s.Filter,
 			Stacking:      s.Stacking,
 			StackingField: s.StackingField,
@@ -239,8 +236,8 @@ func runTestdataCase(t *testing.T, reg *spell.Registry, path string) {
 		Spells:     spells,
 	}
 
-	targets, hexes := ResolveTargets(input, bf)
-	assertExpected(t, tc.Expected, targets, hexes)
+	result := ExecuteLink(input, bf)
+	assertExpected(t, tc.Expected, result.Targets, result.Hexes)
 }
 
 func offsetPair(p []int) hex.Hex {

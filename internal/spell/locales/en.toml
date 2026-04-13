@@ -48,6 +48,22 @@ description = "Target all electric floor hexes within radius 6"
 name        = "Thorn Filter"
 description = "Target all thorns hexes within radius 5"
 
+[3way]
+name        = "3-Way"
+description = "Split each origin into 3 directions. The next line fires as three parallel beams"
+
+[pierce]
+name        = "Pierce"
+description = "The next line action walks through walls and units"
+
+[homing]
+name        = "Homing"
+description = "Snap each origin to the nearest enemy. The next action fires from those positions"
+
+[bounce]
+name        = "Bounce"
+description = "The next line reflects once when it hits a wall"
+
 [fireball]
 name        = "Fireball"
 description = "Fire damage. Applies Burning to targets"

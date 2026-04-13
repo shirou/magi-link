@@ -6,17 +6,29 @@
 # cost_type: "exponential" | "additive"
 # shape: "self" | "single" | "line" | "area" | "ring" | "adjacent"
 #        | "weakest" | "ally" | "terrain_filter"
+#        | "3way" | "pierce" | "homing" | "bounce"
 # element: "fire" | "ice" | "lightning" | "water" | "poison" | "physical"
 # status: "burning" | "frozen" | "electrified" | "wet" | "poisoned" | "bleeding"
 # movement: "push" | "pull"
 # terrain_create: "generated_wall" | "water_puddle" | "poison_swamp" | "fire_floor"
 # filter: terrain type name for terrain_filter shape
+# pierce: line spells walk through walls/units up to max range
 #
 # stacking: "none" (default) | "increment" | "full"
 #   Controls same-type stacking degradation.
 #   "none"      = 2nd+ use has no effect
 #   "increment" = 2nd+ use adds stacking_value to stacking_field
 #   "full"      = 2nd+ use has full effect (no degradation)
+#
+# Bucket-relay model:
+#   Each target-type spell transforms a running (Origins, Targets, Hexes,
+#   Flags) state. Action-type shapes like `line` walk from each origin and
+#   set the impact hex as the new origin, so subsequent spells fire from
+#   the impact point. Modifier shapes (self, single, area, ring, adjacent,
+#   weakest, ally, terrain_filter) add to Targets without moving Origins.
+#   Origin-transformer shapes (3way, homing) override Origins directly.
+#   Flag shapes (pierce, bounce) set transient flags consumed by the next
+#   action step.
 # ============================================================
 
 # ============================================================
@@ -136,6 +148,55 @@ shape     = "terrain_filter"
 filter    = "thorns"
 range     = 0
 radius    = 5
+
+# ============================================================
+# Modifier Spells (bucket-relay origin/flag transformers)
+# ============================================================
+
+# 3way expands each current origin into 3 adjacent hexes, one step
+# in direction dir-1, dir, dir+1. Used before a line-type spell to
+# fire three parallel lines.
+[spells.3way]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "3way"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# pierce sets a transient flag: the next line spell walks through
+# walls and units up to its full range.
+[spells.pierce]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "pierce"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# homing snaps each current origin to the nearest living enemy. The
+# next action fires from those enemy positions.
+[spells.homing]
+type      = "target"
+cost_type = "additive"
+base_cost = 3
+shape     = "homing"
+range     = 0
+radius    = 0
+stacking  = "none"
+
+# bounce sets a transient flag: the next line spell reflects once
+# when it hits a wall (direction rotated 180°).
+[spells.bounce]
+type      = "target"
+cost_type = "additive"
+base_cost = 2
+shape     = "bounce"
+range     = 0
+radius    = 0
+stacking  = "none"
 
 # ============================================================
 # Action Spells - Attack

@@ -1,0 +1,38 @@
+# pierce → line: the line walks its full range, ignoring walls.
+
+name        = "pierce flag lets line walk through walls"
+description = "Wall at step 2 does not stop a pierced line"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [2, 4]
+hp     = 100
+player = true
+
+# Wall blocking the direct path at step 2
+[[battlefield.terrain]]
+pos  = [4, 4]
+type = "rock"
+
+[input]
+caster    = [2, 4]
+clicked   = [10, 4]
+direction = 0
+
+[[input.spells]]
+ref = "pierce"
+
+[[input.spells]]
+id    = "long_line"
+type  = "target"
+shape = "line"
+range = 5
+
+[expected]
+# With pierce, the line walks 5 hexes in direction 0, passing through the wall.
+hex_count = 5

@@ -48,6 +48,22 @@ description = "半径6内の感電地形ヘックスすべてを対象にする"
 name        = "茨フィルタ"
 description = "半径5内の茨ヘックスすべてを対象にする"
 
+[3way]
+name        = "スリーウェイ"
+description = "各起点を3方向へ分岐。次のラインが3本に分かれて発射される"
+
+[pierce]
+name        = "ピアース"
+description = "次のライン系アクションが壁やユニットを貫通する"
+
+[homing]
+name        = "ホーミング"
+description = "各起点を最寄りの敵に再設定。次のアクションはそこから発射される"
+
+[bounce]
+name        = "バウンス"
+description = "次のラインが壁に当たると一度だけ反射する"
+
 [fireball]
 name        = "ファイアボール"
 description = "火属性ダメージ。対象にBurningを付与"
