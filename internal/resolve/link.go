@@ -1,8 +1,10 @@
 package resolve
 
 import (
+	"github.com/shirou/magi_link/internal/entity"
 	"github.com/shirou/magi_link/internal/hex"
 	"github.com/shirou/magi_link/internal/spell"
+	"github.com/shirou/magi_link/internal/terrain"
 )
 
 // LinkInput is what the game provides when the player confirms a target.
@@ -14,19 +16,16 @@ type LinkInput struct {
 }
 
 // StatusChange describes a status effect to apply or remove on a unit.
-// Status names are strings so the resolve package does not depend on
-// the entity status enum; the game layer parses with entity.ParseStatus.
 type StatusChange struct {
 	UnitID int
-	Status string
+	Status entity.StatusEffect
 	Turns  int
 }
 
 // TerrainChange describes a terrain mutation at a given hex.
-// Type is a terrain type name; the game layer parses with terrain.ParseTerrainType.
 type TerrainChange struct {
 	Pos  hex.Hex
-	Type string
+	Type terrain.TerrainType
 }
 
 // UnitMove describes a unit position change.
@@ -40,19 +39,15 @@ type UnitMove struct {
 // The resolve package never mutates game state directly; the game
 // applies results with animations/logging as needed.
 type LinkResult struct {
-	// Phase 1: Target resolution
 	Targets []spell.Target
-	Hexes   []hex.Hex // all selected hexes (for rendering/VFX)
+	Hexes   []hex.Hex
 
-	// Phase 2: Action execution
-	Damage         map[int]int // unitID → total damage
-	Healing        map[int]int // unitID → total healing
+	Damage         map[int]int
+	Healing        map[int]int
 	StatusApplied  []StatusChange
 	StatusRemoved  []StatusChange
 	TerrainChanges []TerrainChange
 	UnitsMoved     []UnitMove
-
-	// Phase 3: Turn-end resolution (future, separate call)
 }
 
 // stepFlag is a transient modifier applied to the next action step.
@@ -88,7 +83,6 @@ func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 		Healing: make(map[int]int),
 	}
 
-	// Same-shape count for optional stacking behaviors.
 	shapeCounts := make(map[spell.TargetShape]int)
 
 	for _, s := range input.Spells {
@@ -97,7 +91,7 @@ func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 			shapeCounts[s.Shape]++
 			state = applyStep(state, s, input, bf, shapeCounts[s.Shape])
 		case s.IsAction():
-			state = applyAction(state, s, input, bf, &result)
+			state = applyAction(state, s, input.CasterPos, bf, &result)
 		}
 	}
 

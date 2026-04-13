@@ -87,22 +87,28 @@ func (u *Unit) HasStatus(s StatusEffect) bool {
 	return ok && turns > 0
 }
 
+// IsAlive returns true if u is a non-nil, living unit. Safe to call on nil.
+func (u *Unit) IsAlive() bool {
+	return u != nil && !u.IsDead
+}
+
+// statusNames maps every StatusEffect to its TOML/UI string name.
+var statusNames = map[StatusEffect]string{
+	StatusBurning:     "burning",
+	StatusFrozen:      "frozen",
+	StatusPoisoned:    "poisoned",
+	StatusBleeding:    "bleeding",
+	StatusWet:         "wet",
+	StatusElectrified: "electrified",
+}
+
 // ParseStatus converts a status name string to a StatusEffect.
-// Returns StatusNone for unknown names.
+// Returns StatusNone for unknown or empty names.
 func ParseStatus(name string) StatusEffect {
-	switch name {
-	case "burning":
-		return StatusBurning
-	case "frozen":
-		return StatusFrozen
-	case "poisoned":
-		return StatusPoisoned
-	case "bleeding":
-		return StatusBleeding
-	case "wet":
-		return StatusWet
-	case "electrified":
-		return StatusElectrified
+	for s, n := range statusNames {
+		if n == name {
+			return s
+		}
 	}
 	return StatusNone
 }

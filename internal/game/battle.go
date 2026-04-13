@@ -300,62 +300,45 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 	b.cachedChainCost = 0
 }
 
-// applyLinkResult mutates battlefield state based on Phase 2 diffs
-// from the resolve pipeline. This is a straight translation: the
-// resolve package computed WHAT should happen, and this function
-// makes it happen on the actual units and terrain.
+// applyLinkResult mutates the battlefield from a LinkResult's diff.
+// Dead-check on heal / status / move is intentional: earlier damage
+// in the same result may have killed the unit.
 func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
 	for unitID, dmg := range result.Damage {
 		u := b.unitByID(unitID)
-		if u == nil || u.IsDead {
+		if !u.IsAlive() {
 			continue
 		}
-		actual := u.TakeDamage(dmg)
-		b.TurnStats.DamageDealt += actual
-		if b.TurnStats.UnitsAttacked != nil {
-			b.TurnStats.UnitsAttacked[unitID] = true
-		}
+		b.TurnStats.DamageDealt += u.TakeDamage(dmg)
+		b.TurnStats.UnitsAttacked[unitID] = true
 	}
 	for unitID, heal := range result.Healing {
 		u := b.unitByID(unitID)
-		if u == nil || u.IsDead {
+		if !u.IsAlive() {
 			continue
 		}
-		actual := u.Heal(heal)
-		b.TurnStats.HealingDone += actual
+		b.TurnStats.HealingDone += u.Heal(heal)
 	}
 	for _, sc := range result.StatusApplied {
 		u := b.unitByID(sc.UnitID)
-		if u == nil || u.IsDead {
+		if !u.IsAlive() {
 			continue
 		}
-		status := entity.ParseStatus(sc.Status)
-		if status == entity.StatusNone {
-			continue
-		}
-		u.ApplyStatus(status, sc.Turns)
+		u.ApplyStatus(sc.Status, sc.Turns)
 		b.TurnStats.StatusesApplied++
 	}
 	for _, sc := range result.StatusRemoved {
-		u := b.unitByID(sc.UnitID)
-		if u == nil {
-			continue
+		// Removing a burn from a corpse is harmless; don't filter on IsDead.
+		if u := b.unitByID(sc.UnitID); u != nil {
+			delete(u.Statuses, sc.Status)
 		}
-		status := entity.ParseStatus(sc.Status)
-		if status == entity.StatusNone {
-			continue
-		}
-		delete(u.Statuses, status)
 	}
 	for _, tc := range result.TerrainChanges {
-		b.TerrainMap.Set(tc.Pos, &terrain.Terrain{
-			Type:     terrain.ParseTerrainType(tc.Type),
-			Duration: -1,
-		})
+		b.TerrainMap.Set(tc.Pos, &terrain.Terrain{Type: tc.Type, Duration: -1})
 	}
 	for _, mv := range result.UnitsMoved {
 		u := b.unitByID(mv.UnitID)
-		if u == nil || u.IsDead {
+		if !u.IsAlive() {
 			continue
 		}
 		u.Pos = mv.To

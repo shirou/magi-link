@@ -98,7 +98,7 @@ func TestActionAppliesStatus(t *testing.T) {
 		t.Fatalf("want 1 status applied, got %d", len(result.StatusApplied))
 	}
 	sc := result.StatusApplied[0]
-	if sc.UnitID != 10 || sc.Status != "burning" || sc.Turns != 2 {
+	if sc.UnitID != 10 || sc.Status != entity.StatusBurning || sc.Turns != 2 {
 		t.Errorf("unexpected status change: %+v", sc)
 	}
 }
@@ -130,7 +130,7 @@ func TestActionStatusComboBonusDamageAndRemoval(t *testing.T) {
 	if result.Damage[10] != 5 {
 		t.Errorf("combo bonus damage: want 5 (3+2), got %d", result.Damage[10])
 	}
-	if len(result.StatusRemoved) != 1 || result.StatusRemoved[0].Status != "poisoned" {
+	if len(result.StatusRemoved) != 1 || result.StatusRemoved[0].Status != entity.StatusPoisoned {
 		t.Errorf("combo status removal: got %v", result.StatusRemoved)
 	}
 }
@@ -184,7 +184,7 @@ func TestActionTerrainCreate(t *testing.T) {
 		t.Fatalf("want 1 terrain change, got %d", len(result.TerrainChanges))
 	}
 	tc := result.TerrainChanges[0]
-	if tc.Pos != pos || tc.Type != "water_puddle" {
+	if tc.Pos != pos || tc.Type != terrain.TerrainWaterPuddle {
 		t.Errorf("unexpected terrain change: %+v", tc)
 	}
 }
@@ -213,7 +213,7 @@ func TestActionTerrainInteractionTransformsExisting(t *testing.T) {
 
 	found := false
 	for _, tc := range result.TerrainChanges {
-		if tc.Pos == pos && tc.Type == "plain" {
+		if tc.Pos == pos && tc.Type == terrain.TerrainPlain {
 			found = true
 		}
 	}
@@ -377,7 +377,7 @@ func TestRegistryFireballAppliesFullEffect(t *testing.T) {
 	if result.Damage[10] != fireball.Damage {
 		t.Errorf("fireball base damage: want %d, got %d", fireball.Damage, result.Damage[10])
 	}
-	if len(result.StatusApplied) != 1 || result.StatusApplied[0].Status != "burning" {
+	if len(result.StatusApplied) != 1 || result.StatusApplied[0].Status != entity.StatusBurning {
 		t.Errorf("fireball should apply burning, got %v", result.StatusApplied)
 	}
 }

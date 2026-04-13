@@ -143,24 +143,3 @@ func (m *Map) HasLineOfSight(from, to hex.Hex) bool {
 	}
 	return true
 }
-
-// Interact handles terrain interaction when a spell hits a terrain hex
-// Returns the resulting terrain type after interaction
-func (m *Map) Interact(h hex.Hex, spellID string) *Terrain {
-	current := m.Get(h)
-	switch {
-	case current.Type == TerrainLava && spellID == "ice":
-		return &Terrain{Type: TerrainPlain, Duration: -1}
-	case current.Type == TerrainWaterPuddle && spellID == "lightning":
-		// Handled by spell logic (chain propagation)
-		return current
-	case current.Type == TerrainPoisonSwamp && spellID == "fireball":
-		// Explosion handled by spell logic
-		return &Terrain{Type: TerrainPlain, Duration: -1}
-	case current.Type == TerrainFireFloor && spellID == "water":
-		return &Terrain{Type: TerrainPlain, Duration: -1}
-	case current.Type == TerrainThorns && spellID == "fireball":
-		return &Terrain{Type: TerrainPlain, Duration: -1}
-	}
-	return current
-}
