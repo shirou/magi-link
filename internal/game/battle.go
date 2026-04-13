@@ -294,11 +294,82 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 		Spells:     spells,
 	}, b)
 
-	// Store result for rendering / future action execution
-	_ = result
+	b.applyLinkResult(result)
 
 	b.Chain.Slots = b.Chain.Slots[:0]
 	b.cachedChainCost = 0
+}
+
+// applyLinkResult mutates battlefield state based on Phase 2 diffs
+// from the resolve pipeline. This is a straight translation: the
+// resolve package computed WHAT should happen, and this function
+// makes it happen on the actual units and terrain.
+func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
+	for unitID, dmg := range result.Damage {
+		u := b.unitByID(unitID)
+		if u == nil || u.IsDead {
+			continue
+		}
+		actual := u.TakeDamage(dmg)
+		b.TurnStats.DamageDealt += actual
+		if b.TurnStats.UnitsAttacked != nil {
+			b.TurnStats.UnitsAttacked[unitID] = true
+		}
+	}
+	for unitID, heal := range result.Healing {
+		u := b.unitByID(unitID)
+		if u == nil || u.IsDead {
+			continue
+		}
+		actual := u.Heal(heal)
+		b.TurnStats.HealingDone += actual
+	}
+	for _, sc := range result.StatusApplied {
+		u := b.unitByID(sc.UnitID)
+		if u == nil || u.IsDead {
+			continue
+		}
+		status := entity.ParseStatus(sc.Status)
+		if status == entity.StatusNone {
+			continue
+		}
+		u.ApplyStatus(status, sc.Turns)
+		b.TurnStats.StatusesApplied++
+	}
+	for _, sc := range result.StatusRemoved {
+		u := b.unitByID(sc.UnitID)
+		if u == nil {
+			continue
+		}
+		status := entity.ParseStatus(sc.Status)
+		if status == entity.StatusNone {
+			continue
+		}
+		delete(u.Statuses, status)
+	}
+	for _, tc := range result.TerrainChanges {
+		b.TerrainMap.Set(tc.Pos, &terrain.Terrain{
+			Type:     terrain.ParseTerrainType(tc.Type),
+			Duration: -1,
+		})
+	}
+	for _, mv := range result.UnitsMoved {
+		u := b.unitByID(mv.UnitID)
+		if u == nil || u.IsDead {
+			continue
+		}
+		u.Pos = mv.To
+	}
+}
+
+// unitByID returns the unit with the given ID, or nil if not found.
+func (b *BattleState) unitByID(id int) *entity.Unit {
+	for _, u := range b.Units {
+		if u.ID == id {
+			return u
+		}
+	}
+	return nil
 }
 
 func (b *BattleState) endTurn() {

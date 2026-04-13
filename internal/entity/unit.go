@@ -87,6 +87,26 @@ func (u *Unit) HasStatus(s StatusEffect) bool {
 	return ok && turns > 0
 }
 
+// ParseStatus converts a status name string to a StatusEffect.
+// Returns StatusNone for unknown names.
+func ParseStatus(name string) StatusEffect {
+	switch name {
+	case "burning":
+		return StatusBurning
+	case "frozen":
+		return StatusFrozen
+	case "poisoned":
+		return StatusPoisoned
+	case "bleeding":
+		return StatusBleeding
+	case "wet":
+		return StatusWet
+	case "electrified":
+		return StatusElectrified
+	}
+	return StatusNone
+}
+
 // TickStatuses decrements status durations at turn end
 func (u *Unit) TickStatuses() {
 	for s, turns := range u.Statuses {
