@@ -294,11 +294,65 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 		Spells:     spells,
 	}, b)
 
-	// Store result for rendering / future action execution
-	_ = result
+	b.applyLinkResult(result)
 
 	b.Chain.Slots = b.Chain.Slots[:0]
 	b.cachedChainCost = 0
+}
+
+// applyLinkResult mutates the battlefield from a LinkResult's diff.
+// Dead-check on heal / status / move is intentional: earlier damage
+// in the same result may have killed the unit.
+func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
+	for unitID, dmg := range result.Damage {
+		u := b.unitByID(unitID)
+		if !u.IsAlive() {
+			continue
+		}
+		b.TurnStats.DamageDealt += u.TakeDamage(dmg)
+		b.TurnStats.UnitsAttacked[unitID] = true
+	}
+	for unitID, heal := range result.Healing {
+		u := b.unitByID(unitID)
+		if !u.IsAlive() {
+			continue
+		}
+		b.TurnStats.HealingDone += u.Heal(heal)
+	}
+	for _, sc := range result.StatusApplied {
+		u := b.unitByID(sc.UnitID)
+		if !u.IsAlive() {
+			continue
+		}
+		u.ApplyStatus(sc.Status, sc.Turns)
+		b.TurnStats.StatusesApplied++
+	}
+	for _, sc := range result.StatusRemoved {
+		// Removing a burn from a corpse is harmless; don't filter on IsDead.
+		if u := b.unitByID(sc.UnitID); u != nil {
+			delete(u.Statuses, sc.Status)
+		}
+	}
+	for _, tc := range result.TerrainChanges {
+		b.TerrainMap.Set(tc.Pos, &terrain.Terrain{Type: tc.Type, Duration: -1})
+	}
+	for _, mv := range result.UnitsMoved {
+		u := b.unitByID(mv.UnitID)
+		if !u.IsAlive() {
+			continue
+		}
+		u.Pos = mv.To
+	}
+}
+
+// unitByID returns the unit with the given ID, or nil if not found.
+func (b *BattleState) unitByID(id int) *entity.Unit {
+	for _, u := range b.Units {
+		if u.ID == id {
+			return u
+		}
+	}
+	return nil
 }
 
 func (b *BattleState) endTurn() {

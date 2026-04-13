@@ -1,8 +1,10 @@
 package resolve
 
 import (
+	"github.com/shirou/magi_link/internal/entity"
 	"github.com/shirou/magi_link/internal/hex"
 	"github.com/shirou/magi_link/internal/spell"
+	"github.com/shirou/magi_link/internal/terrain"
 )
 
 // LinkInput is what the game provides when the player confirms a target.
@@ -13,23 +15,39 @@ type LinkInput struct {
 	Spells     []*spell.SpellDef // the full link's spell list
 }
 
+// StatusChange describes a status effect to apply or remove on a unit.
+type StatusChange struct {
+	UnitID int
+	Status entity.StatusEffect
+	Turns  int
+}
+
+// TerrainChange describes a terrain mutation at a given hex.
+type TerrainChange struct {
+	Pos  hex.Hex
+	Type terrain.TerrainType
+}
+
+// UnitMove describes a unit position change.
+type UnitMove struct {
+	UnitID int
+	From   hex.Hex
+	To     hex.Hex
+}
+
 // LinkResult holds the outcome of executing a full spell link.
 // The resolve package never mutates game state directly; the game
 // applies results with animations/logging as needed.
 type LinkResult struct {
-	// Phase 1: Target resolution
 	Targets []spell.Target
-	Hexes   []hex.Hex // all selected hexes (for rendering/VFX)
+	Hexes   []hex.Hex
 
-	// Phase 2: Action execution (future)
-	// Damage         map[int]int
-	// Healing        map[int]int
-	// StatusApplied  []StatusChange
-	// StatusRemoved  []StatusChange
-	// TerrainChanges []TerrainChange
-	// UnitsMoved     []UnitMove
-
-	// Phase 3: Turn-end resolution (future, separate call)
+	Damage         map[int]int
+	Healing        map[int]int
+	StatusApplied  []StatusChange
+	StatusRemoved  []StatusChange
+	TerrainChanges []TerrainChange
+	UnitsMoved     []UnitMove
 }
 
 // stepFlag is a transient modifier applied to the next action step.
@@ -52,24 +70,32 @@ type LinkState struct {
 }
 
 // ExecuteLink runs the full link pipeline and returns the result.
-// Currently only Phase 1 (target resolution) is implemented.
+// Target-type spells transform the running LinkState (Phase 1);
+// action-type spells consume the current Targets and write diffs
+// into the result (Phase 2). The two phases are interleaved in chain
+// order so chains like `single → fireball → line → fireball` work
+// correctly: the second fireball fires against targets accumulated
+// by both the `single` and `line` steps.
 func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 	state := LinkState{Origins: []hex.Hex{input.CasterPos}}
+	result := LinkResult{
+		Damage:  make(map[int]int),
+		Healing: make(map[int]int),
+	}
 
-	// Same-shape count for optional stacking behaviors.
 	shapeCounts := make(map[spell.TargetShape]int)
 
 	for _, s := range input.Spells {
-		if !s.IsTarget() {
-			// Action spells are handled in Phase 2.
-			continue
+		switch {
+		case s.IsTarget():
+			shapeCounts[s.Shape]++
+			state = applyStep(state, s, input, bf, shapeCounts[s.Shape])
+		case s.IsAction():
+			state = applyAction(state, s, input.CasterPos, bf, &result)
 		}
-		shapeCounts[s.Shape]++
-		state = applyStep(state, s, input, bf, shapeCounts[s.Shape])
 	}
 
-	return LinkResult{
-		Targets: state.Targets,
-		Hexes:   state.Hexes,
-	}
+	result.Targets = state.Targets
+	result.Hexes = state.Hexes
+	return result
 }
