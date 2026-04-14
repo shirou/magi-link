@@ -93,17 +93,20 @@ func (f *FloatingNumber) Draw(screen *ebiten.Image, grid *hex.Grid) {
 
 // --- HexFlash ---
 
-// HexFlash briefly highlights one hex in the given color.
+// HexFlash briefly highlights one or more hexes in the given color. When an
+// action lands on multiple hexes (area / line / ring) they all flash as a
+// single event so the player sees one synchronised impact rather than a
+// sequential ripple.
 type HexFlash struct {
-	Pos     hex.Hex
-	Color   color.RGBA
-	Elapsed float64
+	Positions []hex.Hex
+	Color     color.RGBA
+	Elapsed   float64
 }
 
 const hexFlashDuration = 0.35
 
-func NewHexFlash(pos hex.Hex, c color.RGBA) *HexFlash {
-	return &HexFlash{Pos: pos, Color: c}
+func NewHexFlash(positions []hex.Hex, c color.RGBA) *HexFlash {
+	return &HexFlash{Positions: positions, Color: c}
 }
 
 func (h *HexFlash) Update(dt float64) bool {
@@ -120,7 +123,9 @@ func (h *HexFlash) Draw(screen *ebiten.Image, grid *hex.Grid) {
 	alpha := uint8(float64(h.Color.A) * (1 - t))
 	c := h.Color
 	c.A = alpha
-	drawHexHighlight(screen, grid, h.Pos, c)
+	for _, p := range h.Positions {
+		drawHexHighlight(screen, grid, p, c)
+	}
 }
 
 // --- UnitTween ---

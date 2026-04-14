@@ -44,6 +44,7 @@ const vfxDt = 1.0 / 60.0
 
 var (
 	colorChainTargetHex = color.RGBA{200, 160, 40, 100}
+	colorCastPreview    = color.RGBA{230, 180, 70, 110}
 	colorFlashHit       = color.RGBA{255, 220, 120, 220}
 	colorFlashHeal      = color.RGBA{120, 240, 140, 200}
 	colorDead           = color.RGBA{90, 90, 90, 255}
@@ -84,6 +85,10 @@ type BattleState struct {
 	VFX            VFXQueue
 	Outcome        BattleOutcome
 	enemyTurnQueue []*entity.Unit
+
+	// CastPreview holds the hexes that the current chain would affect if
+	// cast at HoverHex. Recomputed each frame during PhaseChainTarget.
+	CastPreview []hex.Hex
 }
 
 // NewBattle creates a new battle with initial setup.
@@ -377,10 +382,13 @@ func (b *BattleState) updatePlayerMove() {
 
 // updateChainTarget handles hex selection after the player presses Cast.
 func (b *BattleState) updateChainTarget() {
+	b.refreshCastPreview()
+
 	// Cancel with right-click or Escape → back to select (chain preserved)
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) ||
 		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		b.Phase = PhasePlayerSelect
+		b.CastPreview = nil
 		return
 	}
 
@@ -388,7 +396,36 @@ func (b *BattleState) updateChainTarget() {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
 		b.executeLinkAt(b.HoverHex)
 		b.Phase = PhasePlayerSelect
+		b.CastPreview = nil
 	}
+}
+
+// refreshCastPreview dry-runs the current chain at the hover hex so the
+// player can see the affected hexes before committing the cast. resolve is
+// pure (no bf mutation), so this is safe to call every frame.
+func (b *BattleState) refreshCastPreview() {
+	if !b.HoverValid || len(b.Chain.Slots) == 0 {
+		b.CastPreview = nil
+		return
+	}
+
+	spells := make([]*spell.SpellDef, 0, len(b.Chain.Slots))
+	for _, slot := range b.Chain.Slots {
+		if slot.Spell != nil {
+			spells = append(spells, slot.Spell)
+		}
+	}
+	cx, cy := b.Grid.HexToScreen(b.Player.Pos)
+	tx, ty := b.Grid.HexToScreen(b.HoverHex)
+	dir := hex.AngleToDirection(tx-cx, ty-cy)
+
+	result := resolve.ExecuteLink(resolve.LinkInput{
+		CasterPos:  b.Player.Pos,
+		ClickedHex: b.HoverHex,
+		Direction:  dir,
+		Spells:     spells,
+	}, b)
+	b.CastPreview = result.Hexes
 }
 
 // executeLinkAt runs the resolve pipeline and applies the result.
@@ -429,8 +466,8 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 // Dead-check on heal / status / move is intentional: earlier damage
 // in the same result may have killed the unit.
 func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
-	for _, h := range result.Hexes {
-		b.VFX.Push(NewHexFlash(h, colorFlashHit))
+	if len(result.Hexes) > 0 {
+		b.VFX.Push(NewHexFlash(result.Hexes, colorFlashHit))
 	}
 
 	for unitID, dmg := range result.Damage {
@@ -455,7 +492,7 @@ func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
 		b.TurnStats.HealingDone += actual
 		if actual > 0 {
 			b.VFX.Push(NewHealPop(u.Pos, actual))
-			b.VFX.Push(NewHexFlash(u.Pos, colorFlashHeal))
+			b.VFX.Push(NewHexFlash([]hex.Hex{u.Pos}, colorFlashHeal))
 		}
 	}
 	for _, sc := range result.StatusApplied {
@@ -544,9 +581,14 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	// 5. Chain target hover highlight
-	if b.Phase == PhaseChainTarget && b.HoverValid {
-		drawHexHighlight(screen, b.Grid, b.HoverHex, colorChainTargetHex)
+	// 5. Chain target preview (affected hexes) + hover highlight
+	if b.Phase == PhaseChainTarget {
+		for _, h := range b.CastPreview {
+			drawHexHighlight(screen, b.Grid, h, colorCastPreview)
+		}
+		if b.HoverValid {
+			drawHexHighlight(screen, b.Grid, b.HoverHex, colorChainTargetHex)
+		}
 	} else if b.HoverValid {
 		drawHexHighlight(screen, b.Grid, b.HoverHex, colorHover)
 	}

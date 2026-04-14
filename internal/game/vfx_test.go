@@ -72,7 +72,7 @@ func TestFloatingNumberFinishes(t *testing.T) {
 }
 
 func TestHexFlashFinishes(t *testing.T) {
-	h := NewHexFlash(hex.NewHex(0, 0), color.RGBA{255, 0, 0, 200})
+	h := NewHexFlash([]hex.Hex{hex.NewHex(0, 0)}, color.RGBA{255, 0, 0, 200})
 	done := false
 	for i := 0; i < 100 && !done; i++ {
 		done = h.Update(0.05)
