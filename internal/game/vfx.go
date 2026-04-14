@@ -128,6 +128,44 @@ func (h *HexFlash) Draw(screen *ebiten.Image, grid *hex.Grid) {
 	}
 }
 
+// --- Projectile ---
+
+// Projectile animates a bright dot from caster to target hex to signal that
+// "something flew" before the impact flash fires. Color is kept neutral so
+// we don't need per-spell art.
+type Projectile struct {
+	From, To hex.Hex
+	Color    color.RGBA
+	Elapsed  float64
+}
+
+const projectileDuration = 0.25
+
+func NewProjectile(from, to hex.Hex, c color.RGBA) *Projectile {
+	return &Projectile{From: from, To: to, Color: c}
+}
+
+func (p *Projectile) Update(dt float64) bool {
+	p.Elapsed += dt
+	return p.Elapsed >= projectileDuration
+}
+
+func (p *Projectile) Draw(screen *ebiten.Image, grid *hex.Grid) {
+	t := p.Elapsed / projectileDuration
+	if t > 1 {
+		t = 1
+	}
+	fx, fy := grid.HexToScreen(p.From)
+	tx, ty := grid.HexToScreen(p.To)
+	x := fx + (tx-fx)*t
+	y := fy + (ty-fy)*t
+	// Trailing glow: dimmer halo around a bright core.
+	halo := p.Color
+	halo.A = 120
+	drawCircle(screen, x, y, grid.Size*0.35, halo)
+	drawCircle(screen, x, y, grid.Size*0.18, p.Color)
+}
+
 // --- UnitTween ---
 
 // UnitTween animates a unit's circle from one hex to another. The main draw

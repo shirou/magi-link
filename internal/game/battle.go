@@ -47,6 +47,7 @@ var (
 	colorCastPreview    = color.RGBA{230, 180, 70, 110}
 	colorFlashHit       = color.RGBA{255, 220, 120, 220}
 	colorFlashHeal      = color.RGBA{120, 240, 140, 200}
+	colorProjectile     = color.RGBA{255, 240, 180, 255}
 	colorDead           = color.RGBA{90, 90, 90, 255}
 )
 
@@ -458,6 +459,9 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 		Spells:     spells,
 	}, b)
 
+	// Projectile plays first so the impact flash/pop that applyLinkResult
+	// enqueues fires right after the bolt arrives.
+	b.VFX.Push(NewProjectile(b.Player.Pos, target, colorProjectile))
 	b.applyLinkResult(result)
 
 	b.Chain.Slots = b.Chain.Slots[:0]
