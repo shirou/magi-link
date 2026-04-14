@@ -144,14 +144,16 @@ func (g *Grid) ScreenToHex(x, y float64) Hex {
 
 // AngleToDirection converts a screen-space delta (dx, dy with Y-down)
 // to the nearest hex direction (0-5) for pointy-top layout.
+//
+// The directions array starts at {Q=1,R=0} which is due east (0°), and
+// rotates counter-clockwise by 60°. So angle 0° maps to dir 0, 60° to
+// dir 1, and so on.
 func AngleToDirection(dx, dy float64) int {
 	angle := math.Atan2(-dy, dx) // negate dy because screen Y is down
 	if angle < 0 {
 		angle += 2 * math.Pi
 	}
-	// Each direction covers a 60° wedge; dir 0 is centered at 330°.
-	// Offset by 30° so wedge boundaries align.
-	idx := int(math.Round((angle+math.Pi/6)/(math.Pi/3))) % 6
+	idx := int(math.Round(angle/(math.Pi/3))) % 6
 	return idx
 }
 
