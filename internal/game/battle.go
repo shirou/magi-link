@@ -460,8 +460,11 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 	}, b)
 
 	// Projectile plays first so the impact flash/pop that applyLinkResult
-	// enqueues fires right after the bolt arrives.
-	b.VFX.Push(NewProjectile(b.Player.Pos, target, colorProjectile))
+	// enqueues fires right after the bolt arrives. Aim at the farthest
+	// affected hex so line spells follow the line instead of stopping at
+	// the clicked hex.
+	end := projectileEndpoint(b.Player.Pos, target, result.Hexes)
+	b.VFX.Push(NewProjectile(b.Player.Pos, end, colorProjectile))
 	b.applyLinkResult(result)
 
 	b.Chain.Slots = b.Chain.Slots[:0]
@@ -633,6 +636,28 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 
 	// 10. HUD (on top)
 	b.drawHUD(screen)
+}
+
+// projectileEndpoint picks where the bolt should land: the affected hex
+// farthest from the caster, tie-breaking by proximity to the clicked hex.
+// Falls back to clicked when hexes is empty.
+func projectileEndpoint(caster, clicked hex.Hex, hexes []hex.Hex) hex.Hex {
+	end := clicked
+	bestDist := -1
+	bestTieBreak := 0
+	for _, h := range hexes {
+		d := caster.Distance(h)
+		if d < bestDist {
+			continue
+		}
+		tie := -h.Distance(clicked) // closer to clicked wins tie
+		if d > bestDist || tie > bestTieBreak {
+			bestDist = d
+			bestTieBreak = tie
+			end = h
+		}
+	}
+	return end
 }
 
 func unitColor(u *entity.Unit) color.RGBA {
