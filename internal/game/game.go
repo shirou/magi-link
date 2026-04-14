@@ -17,6 +17,7 @@ const (
 	StateTitle GameState = iota
 	StateBattle
 	StateGameOver
+	StateVictory
 	StateLevelUp
 )
 
@@ -58,8 +59,18 @@ func (g *Game) Update() error {
 		}
 	case StateBattle:
 		g.battle.Update()
-	case StateGameOver:
-		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
+		// Transition once the battle has decided and its VFX finished playing.
+		if g.battle.VFX.IsIdle() {
+			switch g.battle.Outcome {
+			case OutcomeVictory:
+				g.state = StateVictory
+			case OutcomeDefeat:
+				g.state = StateGameOver
+			}
+		}
+	case StateGameOver, StateVictory:
+		if inpututil.IsKeyJustPressed(ebiten.KeySpace) ||
+			inpututil.IsKeyJustPressed(ebiten.KeyR) {
 			g.battle = NewBattle(g.width, g.height, g.spellReg)
 			g.state = StateBattle
 		}
@@ -77,7 +88,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateBattle:
 		g.battle.Draw(screen)
 	case StateGameOver:
-		ebitenutil.DebugPrint(screen, "Game Over\n\nPress R to restart")
+		g.battle.Draw(screen)
+		ebitenutil.DebugPrintAt(screen,
+			"DEFEAT\n\nPress SPACE or R to restart",
+			g.width/2-80, g.height/2-20)
+	case StateVictory:
+		g.battle.Draw(screen)
+		ebitenutil.DebugPrintAt(screen,
+			"VICTORY\n\nPress SPACE or R to restart",
+			g.width/2-80, g.height/2-20)
 	}
 }
 

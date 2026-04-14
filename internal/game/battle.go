@@ -24,12 +24,30 @@ const (
 	PhaseEnemyTurn
 )
 
+// BattleOutcome indicates whether the battle has ended.
+type BattleOutcome int
+
+const (
+	OutcomeNone BattleOutcome = iota
+	OutcomeVictory
+	OutcomeDefeat
+)
+
 const (
 	GridWidth  = 12
 	GridHeight = 10
 )
 
-var colorChainTargetHex = color.RGBA{200, 160, 40, 100}
+// vfxDt is the fixed time step fed to the VFX queue per Update tick.
+// Ebiten calls Update at ~60 Hz.
+const vfxDt = 1.0 / 60.0
+
+var (
+	colorChainTargetHex = color.RGBA{200, 160, 40, 100}
+	colorFlashHit       = color.RGBA{230, 180, 70, 160}
+	colorFlashHeal      = color.RGBA{90, 210, 110, 140}
+	colorDead           = color.RGBA{90, 90, 90, 255}
+)
 
 // BattleState holds all state for a single battle encounter.
 type BattleState struct {
@@ -61,6 +79,11 @@ type BattleState struct {
 	HoverChainIdx   int
 	HoverCast       bool
 	cachedChainCost int // cached per frame to avoid recomputing TotalCost()
+
+	// VFX playback and turn state.
+	VFX            VFXQueue
+	Outcome        BattleOutcome
+	enemyTurnQueue []*entity.Unit
 }
 
 // NewBattle creates a new battle with initial setup.
@@ -87,12 +110,20 @@ func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 	player.IsPlayer = true
 
 	enemy1 := entity.NewUnit(2, "Echo", hex.OffsetToHex(8, 2), 30, 0)
+	enemy1.MeleeDamage = 6
 	enemy2 := entity.NewUnit(3, "Shard", hex.OffsetToHex(9, 6), 40, 0)
+	enemy2.MeleeDamage = 10
 	enemy3 := entity.NewUnit(4, "Chorus", hex.OffsetToHex(7, 7), 25, 0)
+	enemy3.MeleeDamage = 4
 
-	// Initialize spellbook with starter spells (actions first, then targets)
+	// Initialize spellbook with starter spells. More variety than the minimum
+	// so combo discovery has room during self-playtest.
 	book := spell.NewSpellBook()
-	starterSpells := []string{"fireball", "ice", "water", "heal", "single", "self", "line", "area"}
+	starterSpells := []string{
+		"fireball", "ice", "lightning", "water", "poison",
+		"slash", "heal", "push",
+		"single", "self", "line", "area", "3way", "pierce",
+	}
 	for _, id := range starterSpells {
 		if s := reg.Get(id); s != nil {
 			book.Add(s)
@@ -151,6 +182,24 @@ func (b *BattleState) unitAt(h hex.Hex) *entity.Unit {
 
 // Update processes input and updates battle state.
 func (b *BattleState) Update() {
+	// VFX is authoritative for input blocking: while events are playing,
+	// state mutations have already happened but the player hasn't seen them
+	// yet, so accepting input would let them act on invisible state.
+	b.VFX.Update(vfxDt)
+	if !b.VFX.IsIdle() {
+		return
+	}
+
+	b.checkOutcome()
+	if b.Outcome != OutcomeNone {
+		return
+	}
+
+	if b.Phase == PhaseEnemyTurn {
+		b.tickEnemyTurn()
+		return
+	}
+
 	mx, my := ebiten.CursorPosition()
 
 	// Spell UI input (only during select phase — not during targeting)
@@ -182,6 +231,79 @@ func (b *BattleState) Update() {
 	case PhaseChainTarget:
 		b.updateChainTarget()
 	}
+}
+
+// checkOutcome sets b.Outcome if the battle has been decided.
+func (b *BattleState) checkOutcome() {
+	if b.Outcome != OutcomeNone {
+		return
+	}
+	if !b.Player.IsAlive() {
+		b.Outcome = OutcomeDefeat
+		return
+	}
+	for _, u := range b.Units {
+		if !u.IsPlayer && u.IsAlive() {
+			return
+		}
+	}
+	b.Outcome = OutcomeVictory
+}
+
+// tickEnemyTurn processes one enemy from the queue. When empty, the turn
+// returns to the player. Dead units are skipped silently.
+func (b *BattleState) tickEnemyTurn() {
+	for len(b.enemyTurnQueue) > 0 {
+		u := b.enemyTurnQueue[0]
+		b.enemyTurnQueue = b.enemyTurnQueue[1:]
+		if !u.IsAlive() {
+			continue
+		}
+		act := DecideEnemyAction(u, b)
+		b.executeEnemyAction(u, act)
+		return
+	}
+	b.Phase = PhasePlayerSelect
+	b.refillPlayerTurn()
+}
+
+// executeEnemyAction applies an enemy decision and enqueues its VFX.
+// Melee damage routes through applyLinkResult so it shares Phase 2 with
+// spells.
+func (b *BattleState) executeEnemyAction(u *entity.Unit, act EnemyAction) {
+	switch act.Kind {
+	case ActionMove:
+		from := u.Pos
+		u.Pos = act.Move
+		b.VFX.Push(NewUnitTween(from, act.Move))
+	case ActionMelee:
+		if act.Target == nil || !act.Target.IsAlive() {
+			return
+		}
+		b.applyLinkResult(resolve.LinkResult{
+			Damage: map[int]int{act.Target.ID: u.MeleeDamage},
+			Hexes:  []hex.Hex{act.Target.Pos},
+		})
+	case ActionWait:
+		// Nothing; the turn simply advances.
+	}
+}
+
+// refillPlayerTurn runs the end-of-enemy-turn housekeeping that starts
+// the player's next turn.
+func (b *BattleState) refillPlayerTurn() {
+	b.TerrainMap.Tick()
+	for _, u := range b.Units {
+		if !u.IsDead {
+			u.TickStatuses()
+			if u.IsPlayer {
+				u.RecoverMana(30)
+			}
+		}
+	}
+	b.TurnNumber++
+	b.HasMoved = false
+	b.TurnStats = spell.NewTurnStats()
 }
 
 func (b *BattleState) updatePlayerSelect() {
@@ -300,24 +422,41 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 	b.cachedChainCost = 0
 }
 
-// applyLinkResult mutates the battlefield from a LinkResult's diff.
+// applyLinkResult mutates the battlefield from a LinkResult's diff and
+// enqueues the corresponding VFX. State mutation is immediate; VFX plays
+// back over several frames while input is blocked.
+//
 // Dead-check on heal / status / move is intentional: earlier damage
 // in the same result may have killed the unit.
 func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
+	for _, h := range result.Hexes {
+		b.VFX.Push(NewHexFlash(h, colorFlashHit))
+	}
+
 	for unitID, dmg := range result.Damage {
 		u := b.unitByID(unitID)
 		if !u.IsAlive() {
 			continue
 		}
-		b.TurnStats.DamageDealt += u.TakeDamage(dmg)
+		pos := u.Pos
+		actual := u.TakeDamage(dmg)
+		b.TurnStats.DamageDealt += actual
 		b.TurnStats.UnitsAttacked[unitID] = true
+		if actual > 0 {
+			b.VFX.Push(NewDamagePop(pos, actual))
+		}
 	}
 	for unitID, heal := range result.Healing {
 		u := b.unitByID(unitID)
 		if !u.IsAlive() {
 			continue
 		}
-		b.TurnStats.HealingDone += u.Heal(heal)
+		actual := u.Heal(heal)
+		b.TurnStats.HealingDone += actual
+		if actual > 0 {
+			b.VFX.Push(NewHealPop(u.Pos, actual))
+			b.VFX.Push(NewHexFlash(u.Pos, colorFlashHeal))
+		}
 	}
 	for _, sc := range result.StatusApplied {
 		u := b.unitByID(sc.UnitID)
@@ -342,6 +481,7 @@ func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
 			continue
 		}
 		u.Pos = mv.To
+		b.VFX.Push(NewUnitTween(mv.From, mv.To))
 	}
 }
 
@@ -355,25 +495,22 @@ func (b *BattleState) unitByID(id int) *entity.Unit {
 	return nil
 }
 
+// endTurn hands control to the enemy. The per-turn housekeeping
+// (terrain tick, status tick, mana recovery, turn counter) runs when the
+// enemy queue finishes — see refillPlayerTurn.
 func (b *BattleState) endTurn() {
-	b.HasMoved = false
 	b.SelectedUnit = nil
 	b.Reachable = nil
 	b.MovePath = nil
 	b.Chain.Slots = nil
-	b.TurnStats = spell.NewTurnStats()
 
-	b.TerrainMap.Tick()
+	b.enemyTurnQueue = b.enemyTurnQueue[:0]
 	for _, u := range b.Units {
-		if !u.IsDead {
-			u.TickStatuses()
-			if u.IsPlayer {
-				u.RecoverMana(30)
-			}
+		if !u.IsPlayer && u.IsAlive() {
+			b.enemyTurnQueue = append(b.enemyTurnQueue, u)
 		}
 	}
-	b.TurnNumber++
-	b.Phase = PhasePlayerSelect
+	b.Phase = PhaseEnemyTurn
 }
 
 // Draw renders the battle scene.
@@ -414,7 +551,13 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		drawHexHighlight(screen, b.Grid, b.HoverHex, colorHover)
 	}
 
-	// 6. Units
+	// 6. Units (dead first so living draw on top).
+	for _, u := range b.Units {
+		if !u.IsDead {
+			continue
+		}
+		drawUnit(screen, b.Grid, u.Pos, colorDead)
+	}
 	for _, u := range b.Units {
 		if u.IsDead {
 			continue
@@ -424,6 +567,7 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 			clr = colorPlayer
 		}
 		drawUnit(screen, b.Grid, u.Pos, clr)
+		drawStatusIcons(screen, b.Grid, u)
 	}
 
 	// 7. Selected unit outline
@@ -432,11 +576,49 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		drawHexOutline(screen, sx, sy, b.Grid.Size*0.94, 2.5, colorSelected)
 	}
 
-	// 8. Spell panel
+	// 8. VFX layer (on top of units, under the panel).
+	b.VFX.Draw(screen, b.Grid)
+
+	// 9. Spell panel
 	b.drawSpellPanel(screen)
 
-	// 9. HUD (on top)
+	// 10. HUD (on top)
 	b.drawHUD(screen)
+}
+
+func drawStatusIcons(screen *ebiten.Image, grid *hex.Grid, u *entity.Unit) {
+	if len(u.Statuses) == 0 {
+		return
+	}
+	sx, sy := grid.HexToScreen(u.Pos)
+	letters := make([]byte, 0, len(u.Statuses))
+	for s := range u.Statuses {
+		if ch := statusLetter(s); ch != 0 {
+			letters = append(letters, ch)
+		}
+	}
+	if len(letters) == 0 {
+		return
+	}
+	ebitenutil.DebugPrintAt(screen, string(letters), int(sx)-len(letters)*3, int(sy)+int(grid.Size*0.4))
+}
+
+func statusLetter(s entity.StatusEffect) byte {
+	switch s {
+	case entity.StatusBurning:
+		return 'B'
+	case entity.StatusFrozen:
+		return 'F'
+	case entity.StatusPoisoned:
+		return 'P'
+	case entity.StatusBleeding:
+		return 'b'
+	case entity.StatusWet:
+		return 'W'
+	case entity.StatusElectrified:
+		return 'E'
+	}
+	return 0
 }
 
 func (b *BattleState) drawHUD(screen *ebiten.Image) {

@@ -44,10 +44,26 @@ var (
 )
 
 // Pre-allocated image for colored text rendering to avoid per-frame GPU allocation.
-var warnTextImg *ebiten.Image
+var coloredTextImg *ebiten.Image
 
 func init() {
-	warnTextImg = ebiten.NewImage(96, 16)
+	coloredTextImg = ebiten.NewImage(128, 16)
+}
+
+// drawColoredText draws `text` at (x, y) tinted by c. Reuses a single
+// offscreen image to avoid per-frame GPU allocations.
+func drawColoredText(screen *ebiten.Image, text string, x, y int, c color.RGBA) {
+	coloredTextImg.Clear()
+	ebitenutil.DebugPrintAt(coloredTextImg, text, 0, 0)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.Scale(
+		float32(c.R)/255.0,
+		float32(c.G)/255.0,
+		float32(c.B)/255.0,
+		float32(c.A)/255.0,
+	)
+	screen.DrawImage(coloredTextImg, op)
 }
 
 // updateSpellUI handles input for the spell panel.
@@ -251,20 +267,8 @@ func (b *BattleState) drawCastRow(screen *ebiten.Image, screenW int) {
 	ebitenutil.DebugPrintAt(screen, hintStr, screenW-len(hintStr)*6-16, castRowY+6)
 }
 
-// drawWarnText draws warning text in red using the pre-allocated image.
 func drawWarnText(screen *ebiten.Image, text string, x, y int) {
-	warnTextImg.Clear()
-	ebitenutil.DebugPrintAt(warnTextImg, text, 0, 0)
-
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(float64(x), float64(y))
-	op.ColorScale.Scale(
-		float32(colorManaWarn.R)/255.0,
-		float32(colorManaWarn.G)/255.0,
-		float32(colorManaWarn.B)/255.0,
-		float32(colorManaWarn.A)/255.0,
-	)
-	screen.DrawImage(warnTextImg, op)
+	drawColoredText(screen, text, x, y, colorManaWarn)
 }
 
 func truncate(s string, maxLen int) string {

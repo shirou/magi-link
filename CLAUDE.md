@@ -1,7 +1,20 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 本ファイルは Claude Code (claude.ai/code) が本リポジトリで作業する際の
-ガイドラインを記述する。
+ガイドラインを記述する。ゲームデザインの全体像は
+[magi_link_design_spec.md](./magi_link_design_spec.md) を参照。
+
+## Common commands
+
+- `make run` / `go run ./cmd/game` — デスクトップ版を起動 (Ebitengine)
+- `make build` — WASM ビルド (`web/main.wasm`) と `wasm_exec.js` の配置
+- `go build ./...` — 通常ビルド確認
+- `GOOS=js GOARCH=wasm go build ./...` — WASM ビルド確認 (ターゲット必須)
+- `go test ./...` — 全テスト
+- `go test ./internal/resolve -run TestExecuteLink` — パッケージ単位 / 単体テスト
+- `go test ./internal/resolve -run TestExecuteLink/case_name -v` — testdata の 1 ケースのみ実行
 
 ## Project policy
 
