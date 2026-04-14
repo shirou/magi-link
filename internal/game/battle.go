@@ -392,8 +392,13 @@ func (b *BattleState) updateChainTarget() {
 		return
 	}
 
-	// Confirm target with left-click on a valid hex
+	// Confirm target with left-click on a valid hex. Ignore clicks that would
+	// produce no effect (preview empty — e.g. target spell's range not met);
+	// otherwise the player loses mana with no visible outcome.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
+		if len(b.CastPreview) == 0 {
+			return
+		}
 		b.executeLinkAt(b.HoverHex)
 		b.Phase = PhasePlayerSelect
 		b.CastPreview = nil

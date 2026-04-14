@@ -121,14 +121,11 @@ func classifySpells(spells []*spell.SpellDef) (hasTarget, hasAction bool) {
 }
 
 // seedDefaultTarget treats the clicked hex as an implicit single-target so
-// action-only chains have something to fire on. The clicked hex must be in
-// bounds and within the caster's natural reach (single-spell range of 5).
+// action-only chains have something to fire on. No range limit is applied:
+// the player's intent is clear (hit where they clicked), and range belongs
+// to target spells when they're in the chain.
 func seedDefaultTarget(state LinkState, input LinkInput, bf Battlefield) LinkState {
-	const defaultReach = 5
 	if !bf.GridBounds().InBounds(input.ClickedHex) {
-		return state
-	}
-	if input.CasterPos.Distance(input.ClickedHex) > defaultReach {
 		return state
 	}
 	unitID := -1
