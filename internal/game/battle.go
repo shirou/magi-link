@@ -131,7 +131,7 @@ func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 		// Actions (element + utility).
 		"fireball", "ice", "lightning", "heal", "push",
 		// Target shapes + modifiers (bucket-relay building blocks).
-		"single", "self", "line", "area", "ring", "adjacent",
+		"single", "self", "line", "area",
 		"weakest", "3way", "pierce", "bounce",
 	}
 	for _, id := range starterSpells {
