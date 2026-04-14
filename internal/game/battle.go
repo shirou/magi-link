@@ -642,39 +642,35 @@ func unitColor(u *entity.Unit) color.RGBA {
 	return colorEnemy
 }
 
+// statusDisplayOrder fixes the order of status letters so the badge strip
+// doesn't flicker frame-to-frame (Go's map iteration is randomized).
+var statusDisplayOrder = []struct {
+	Status entity.StatusEffect
+	Letter byte
+}{
+	{entity.StatusBurning, 'B'},
+	{entity.StatusFrozen, 'F'},
+	{entity.StatusPoisoned, 'P'},
+	{entity.StatusBleeding, 'b'},
+	{entity.StatusWet, 'W'},
+	{entity.StatusElectrified, 'E'},
+}
+
 func drawStatusIcons(screen *ebiten.Image, grid *hex.Grid, u *entity.Unit) {
 	if len(u.Statuses) == 0 {
 		return
 	}
-	sx, sy := grid.HexToScreen(u.Pos)
 	letters := make([]byte, 0, len(u.Statuses))
-	for s := range u.Statuses {
-		if ch := statusLetter(s); ch != 0 {
-			letters = append(letters, ch)
+	for _, entry := range statusDisplayOrder {
+		if u.HasStatus(entry.Status) {
+			letters = append(letters, entry.Letter)
 		}
 	}
 	if len(letters) == 0 {
 		return
 	}
+	sx, sy := grid.HexToScreen(u.Pos)
 	ebitenutil.DebugPrintAt(screen, string(letters), int(sx)-len(letters)*3, int(sy)+int(grid.Size*0.4))
-}
-
-func statusLetter(s entity.StatusEffect) byte {
-	switch s {
-	case entity.StatusBurning:
-		return 'B'
-	case entity.StatusFrozen:
-		return 'F'
-	case entity.StatusPoisoned:
-		return 'P'
-	case entity.StatusBleeding:
-		return 'b'
-	case entity.StatusWet:
-		return 'W'
-	case entity.StatusElectrified:
-		return 'E'
-	}
-	return 0
 }
 
 func (b *BattleState) drawHUD(screen *ebiten.Image) {
