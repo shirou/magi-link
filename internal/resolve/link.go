@@ -83,6 +83,14 @@ func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 		Healing: make(map[int]int),
 	}
 
+	// If the chain has action spells but no target spell, seed a default
+	// single-target at the clicked hex so action-only chains (e.g. fireball
+	// alone) fire on the clicked hex. Empty chains stay empty.
+	hasTarget, hasAction := classifySpells(input.Spells)
+	if hasAction && !hasTarget {
+		state = seedDefaultTarget(state, input, bf)
+	}
+
 	shapeCounts := make(map[spell.TargetShape]int)
 
 	for _, s := range input.Spells {
@@ -98,4 +106,41 @@ func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 	result.Targets = state.Targets
 	result.Hexes = state.Hexes
 	return result
+}
+
+func classifySpells(spells []*spell.SpellDef) (hasTarget, hasAction bool) {
+	for _, s := range spells {
+		if s.IsTarget() {
+			hasTarget = true
+		}
+		if s.IsAction() {
+			hasAction = true
+		}
+	}
+	return
+}
+
+// seedDefaultTarget treats the clicked hex as an implicit single-target so
+// action-only chains have something to fire on. The clicked hex must be in
+// bounds and within the caster's natural reach (single-spell range of 5).
+func seedDefaultTarget(state LinkState, input LinkInput, bf Battlefield) LinkState {
+	const defaultReach = 5
+	if !bf.GridBounds().InBounds(input.ClickedHex) {
+		return state
+	}
+	if input.CasterPos.Distance(input.ClickedHex) > defaultReach {
+		return state
+	}
+	unitID := -1
+	if u := bf.UnitAt(input.ClickedHex); u.IsAlive() {
+		unitID = u.ID
+	}
+	state.Origins = []hex.Hex{input.ClickedHex}
+	state.Targets = append(state.Targets, spell.Target{
+		UnitID: unitID,
+		HexQ:   input.ClickedHex.Q,
+		HexR:   input.ClickedHex.R,
+	})
+	state.Hexes = append(state.Hexes, input.ClickedHex)
+	return state
 }

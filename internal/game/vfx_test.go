@@ -83,7 +83,7 @@ func TestHexFlashFinishes(t *testing.T) {
 }
 
 func TestUnitTweenFinishes(t *testing.T) {
-	tw := NewUnitTween(hex.NewHex(0, 0), hex.NewHex(1, 0))
+	tw := NewUnitTween(1, hex.NewHex(0, 0), hex.NewHex(1, 0), color.RGBA{80, 180, 255, 255})
 	done := false
 	for i := 0; i < 100 && !done; i++ {
 		done = tw.Update(0.05)

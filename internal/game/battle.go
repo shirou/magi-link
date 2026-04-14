@@ -44,8 +44,8 @@ const vfxDt = 1.0 / 60.0
 
 var (
 	colorChainTargetHex = color.RGBA{200, 160, 40, 100}
-	colorFlashHit       = color.RGBA{230, 180, 70, 160}
-	colorFlashHeal      = color.RGBA{90, 210, 110, 140}
+	colorFlashHit       = color.RGBA{255, 220, 120, 220}
+	colorFlashHeal      = color.RGBA{120, 240, 140, 200}
 	colorDead           = color.RGBA{90, 90, 90, 255}
 )
 
@@ -275,7 +275,7 @@ func (b *BattleState) executeEnemyAction(u *entity.Unit, act EnemyAction) {
 	case ActionMove:
 		from := u.Pos
 		u.Pos = act.Move
-		b.VFX.Push(NewUnitTween(from, act.Move))
+		b.VFX.Push(NewUnitTween(u.ID, from, act.Move, unitColor(u)))
 	case ActionMelee:
 		if act.Target == nil || !act.Target.IsAlive() {
 			return
@@ -481,7 +481,7 @@ func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
 			continue
 		}
 		u.Pos = mv.To
-		b.VFX.Push(NewUnitTween(mv.From, mv.To))
+		b.VFX.Push(NewUnitTween(u.ID, mv.From, mv.To, unitColor(u)))
 	}
 }
 
@@ -551,7 +551,9 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		drawHexHighlight(screen, b.Grid, b.HoverHex, colorHover)
 	}
 
-	// 6. Units (dead first so living draw on top).
+	// 6. Units (dead first so living draw on top). Skip the unit currently
+	//    being animated by a UnitTween so it doesn't double-render.
+	tweenedID := b.VFX.TweenHidesUnitID()
 	for _, u := range b.Units {
 		if !u.IsDead {
 			continue
@@ -559,14 +561,10 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		drawUnit(screen, b.Grid, u.Pos, colorDead)
 	}
 	for _, u := range b.Units {
-		if u.IsDead {
+		if u.IsDead || u.ID == tweenedID {
 			continue
 		}
-		clr := colorEnemy
-		if u.IsPlayer {
-			clr = colorPlayer
-		}
-		drawUnit(screen, b.Grid, u.Pos, clr)
+		drawUnit(screen, b.Grid, u.Pos, unitColor(u))
 		drawStatusIcons(screen, b.Grid, u)
 	}
 
@@ -584,6 +582,13 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 
 	// 10. HUD (on top)
 	b.drawHUD(screen)
+}
+
+func unitColor(u *entity.Unit) color.RGBA {
+	if u.IsPlayer {
+		return colorPlayer
+	}
+	return colorEnemy
 }
 
 func drawStatusIcons(screen *ebiten.Image, grid *hex.Grid, u *entity.Unit) {

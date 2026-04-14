@@ -331,22 +331,29 @@ func TestActionClearTargetsDropsAccumulatedList(t *testing.T) {
 
 // --- Action spells alone (no target spells) ---
 
-func TestBareActionWithoutTargetsIsNoOp(t *testing.T) {
+// An action spell with no preceding target spell falls back to an implicit
+// single-target at the clicked hex. Users expect "fireball on enemy" to
+// just work without first adding a `single` to the chain.
+func TestBareActionHitsClickedHex(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(1, 0)
+	victim := entity.NewUnit(10, "V", clicked, 100, 0)
+	bf.units = append(bf.units, victim)
 
 	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
+		CasterPos:  caster,
+		ClickedHex: clicked,
 		Spells: []*spell.SpellDef{
-			{ID: "fireball", Type: "action", Damage: 99},
+			{ID: "fireball", Type: "action", Damage: 7},
 		},
 	}, bf)
 
-	if len(result.Damage) != 0 {
-		t.Errorf("action without targets: want empty damage, got %v", result.Damage)
+	if result.Damage[victim.ID] != 7 {
+		t.Errorf("want 7 damage on clicked unit, got %v", result.Damage)
 	}
-	if len(result.Hexes) != 0 {
-		t.Errorf("action without targets: want no hexes, got %d", len(result.Hexes))
+	if len(result.Hexes) == 0 {
+		t.Error("want clicked hex reported for VFX")
 	}
 }
 
