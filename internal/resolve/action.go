@@ -15,6 +15,9 @@ func applyAction(state LinkState, s *spell.SpellDef, casterPos hex.Hex, bf Battl
 	for _, h := range hitHexes {
 		applyHit(s, h, bf, result)
 	}
+	// Expose the full hit set (including explode_radius expansion) to
+	// state.Hexes so VFX and cast preview cover the actual area of effect.
+	state = recordHexes(state, hitHexes, nil)
 
 	// Movement uses the pre-expansion target list and caster position
 	// to derive push/pull direction.
