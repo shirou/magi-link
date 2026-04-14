@@ -43,8 +43,9 @@ const (
 const vfxDt = 1.0 / 60.0
 
 var (
-	colorChainTargetHex = color.RGBA{200, 160, 40, 100}
-	colorCastPreview    = color.RGBA{230, 180, 70, 110}
+	colorChainTargetHex = color.RGBA{240, 200, 60, 140}
+	colorCastPreview    = color.RGBA{230, 180, 70, 160}
+	colorTargetUnit     = color.RGBA{255, 220, 90, 255}
 	colorFlashHit       = color.RGBA{255, 220, 120, 220}
 	colorFlashHeal      = color.RGBA{120, 240, 140, 200}
 	colorProjectile     = color.RGBA{255, 240, 180, 255}
@@ -89,7 +90,8 @@ type BattleState struct {
 
 	// CastPreview holds the hexes that the current chain would affect if
 	// cast at HoverHex. Recomputed each frame during PhaseChainTarget.
-	CastPreview []hex.Hex
+	CastPreview      []hex.Hex
+	CastPreviewUnits map[int]bool // unit IDs that will take damage / heal / move
 }
 
 // NewBattle creates a new battle with initial setup.
@@ -126,9 +128,11 @@ func NewBattle(screenW, screenH int, reg *spell.Registry) *BattleState {
 	// so combo discovery has room during self-playtest.
 	book := spell.NewSpellBook()
 	starterSpells := []string{
-		"fireball", "ice", "lightning", "water", "poison",
-		"slash", "heal", "push",
-		"single", "self", "line", "area", "3way", "pierce",
+		// Actions (element + utility).
+		"fireball", "ice", "lightning", "heal", "push",
+		// Target shapes + modifiers (bucket-relay building blocks).
+		"single", "self", "line", "area", "ring", "adjacent",
+		"weakest", "3way", "pierce", "bounce",
 	}
 	for _, id := range starterSpells {
 		if s := reg.Get(id); s != nil {
@@ -390,6 +394,7 @@ func (b *BattleState) updateChainTarget() {
 		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		b.Phase = PhasePlayerSelect
 		b.CastPreview = nil
+		b.CastPreviewUnits = nil
 		return
 	}
 
@@ -403,15 +408,17 @@ func (b *BattleState) updateChainTarget() {
 		b.executeLinkAt(b.HoverHex)
 		b.Phase = PhasePlayerSelect
 		b.CastPreview = nil
+		b.CastPreviewUnits = nil
 	}
 }
 
 // refreshCastPreview dry-runs the current chain at the hover hex so the
-// player can see the affected hexes before committing the cast. resolve is
-// pure (no bf mutation), so this is safe to call every frame.
+// player can see the affected hexes and units before committing the cast.
+// resolve is pure (no bf mutation), so this is safe to call every frame.
 func (b *BattleState) refreshCastPreview() {
 	if !b.HoverValid || len(b.Chain.Slots) == 0 {
 		b.CastPreview = nil
+		b.CastPreviewUnits = nil
 		return
 	}
 
@@ -432,6 +439,16 @@ func (b *BattleState) refreshCastPreview() {
 		Spells:     spells,
 	}, b)
 	b.CastPreview = result.Hexes
+	b.CastPreviewUnits = make(map[int]bool, len(result.Damage)+len(result.Healing)+len(result.UnitsMoved))
+	for id := range result.Damage {
+		b.CastPreviewUnits[id] = true
+	}
+	for id := range result.Healing {
+		b.CastPreviewUnits[id] = true
+	}
+	for _, mv := range result.UnitsMoved {
+		b.CastPreviewUnits[mv.UnitID] = true
+	}
 }
 
 // executeLinkAt runs the resolve pipeline and applies the result.
@@ -619,6 +636,10 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 			continue
 		}
 		drawUnit(screen, b.Grid, u.Pos, unitColor(u))
+		if b.Phase == PhaseChainTarget && b.CastPreviewUnits[u.ID] {
+			sx, sy := b.Grid.HexToScreen(u.Pos)
+			drawHexOutline(screen, sx, sy, b.Grid.Size*0.44, 2.5, colorTargetUnit)
+		}
 		drawStatusIcons(screen, b.Grid, u)
 	}
 
