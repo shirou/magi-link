@@ -268,8 +268,8 @@ func TestUtilitySpells(t *testing.T) {
 	if wall.TerrainCreate != "generated_wall" {
 		t.Errorf("wall: terrain_create = %q, want %q", wall.TerrainCreate, "generated_wall")
 	}
-	if !wall.ClearTargets {
-		t.Error("wall: clear_targets should be true")
+	if !wall.ClearState {
+		t.Error("wall: clear_state should be true")
 	}
 }
 

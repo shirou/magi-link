@@ -77,7 +77,7 @@ type SpellDef struct {
 
 	// --- Terrain ---
 	TerrainCreate string `toml:"terrain_create"` // terrain type to create on target hex
-	ClearTargets  bool   `toml:"clear_targets"`  // clear target list after execution
+	ClearState    bool   `toml:"clear_state"`    // drop accumulated Impacts/Field/Waypoints after this action
 
 	// --- Target: terrain filter ---
 	Filter string `toml:"filter"` // terrain type name to match (for terrain_filter shape)

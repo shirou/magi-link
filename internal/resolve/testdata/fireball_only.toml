@@ -1,0 +1,38 @@
+# action-only chain: fireball alone detonates at the clicked hex
+# (seedInitialState makes Origins = clicked).
+
+name        = "bare fireball explodes at clicked hex"
+description = "No target spell; seedInitialState moves Origins to click"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 4]
+hp     = 100
+player = true
+
+# Enemy at a neighbor of clicked — should be caught by radius=1 explosion.
+[[battlefield.units]]
+id   = 10
+name = "Neighbor"
+pos  = [6, 4]
+hp   = 30
+
+[input]
+caster  = [0, 4]
+clicked = [5, 4]
+
+[[input.spells]]
+ref = "fireball"   # explode_radius = 1
+
+[expected]
+# No unit at the clicked hex, so initial Impacts is empty. Explode adds
+# the one neighbor caught by the disc.
+impact_count     = 1
+contains_impacts = [10]
+field_count      = 7    # r=1 disc around clicked
+waypoint_count   = 0

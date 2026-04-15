@@ -1,60 +1,64 @@
 package resolve
 
-// TOML-driven test case format for link (bucket-relay) resolution.
+// TOML-driven link test cases.
 //
-// Each file in testdata/*.toml defines a single test case. The test
-// TestResolveFromTestdata discovers all files in testdata/ and runs
-// them as subtests. This allows adding new test cases without writing
-// any Go code.
+// Each file in testdata/*.toml defines one case. TestResolveFromTestdata
+// discovers them and runs each as a subtest — no Go code per case.
 //
 // ============================================================
 // Schema
 // ============================================================
 //
-//   name        = "short test name"          # required
-//   description = "what this test verifies"  # optional
+//   name        = "short name"              # required
+//   description = "what this verifies"      # optional
 //
 //   [battlefield]
 //   grid_width  = 12
 //   grid_height = 10
 //
 //   [[battlefield.units]]
-//   id     = 1           # unit ID (unique per case)
-//   name   = "Player"    # display name
-//   pos    = [2, 4]      # [col, row] offset coords
+//   id     = 1
+//   name   = "Player"
+//   pos    = [2, 4]        # [col, row] offset coords
 //   hp     = 100
-//   player = true        # true = player/ally, false = enemy
+//   player = true
 //
 //   [[battlefield.terrain]]
 //   pos  = [5, 5]
-//   type = "rock"        # terrain type name (see terrain.TypeName)
+//   type = "rock"
 //
 //   [input]
-//   caster    = [2, 4]   # caster position in offset coords
-//   clicked   = [4, 4]   # clicked hex in offset coords
-//   direction = 0        # hex direction 0-5 (only used by line spells)
-//
-//   # Spells to add to the link. Use `ref` to reference a spell from
-//   # the loaded registry (spells.toml), or provide inline fields for
-//   # custom edge-case definitions.
-//   [[input.spells]]
-//   ref = "single"
+//   caster    = [2, 4]
+//   clicked   = [4, 4]
+//   direction = 0
 //
 //   [[input.spells]]
-//   id    = "custom_line"
+//   ref = "single"             # reference registry spell by ID
+//
+//   [[input.spells]]
+//   id    = "custom_line"      # or an inline definition
 //   type  = "target"
 //   shape = "line"
 //   range = 3
 //
 //   [expected]
-//   hex_count      = 1           # optional: exact count of result hexes
-//   hex_count_min  = 3           # optional: minimum (inclusive)
-//   hex_count_max  = 10          # optional: maximum (inclusive)
-//   target_count   = 2           # optional: exact count of targets
-//   contains_hexes = [[4, 4]]    # must contain these offset coords
-//   excludes_hexes = [[0, 0]]    # must NOT contain these offset coords
-//   contains_units = [10]        # must contain these unit IDs
-//   excludes_units = [1]         # must NOT contain these unit IDs
+//   # Impacts: unit-level damage / heal / status recipients
+//   impact_count     = 2
+//   contains_impacts = [10, 11]   # unit IDs
+//   excludes_impacts = [1]
+//
+//   # Field: hex-level "spell area" (terrain + VFX derivation)
+//   field_count     = 7
+//   field_count_min = 1
+//   field_count_max = 19
+//   contains_field  = [[4, 4]]
+//   excludes_field  = [[0, 0]]
+//
+//   # Waypoints: projectile trajectory hexes (no effect)
+//   waypoint_count     = 3
+//   waypoint_count_min = 1
+//   waypoint_count_max = 5
+//   contains_waypoints = [[3, 4]]
 //
 // ============================================================
 
@@ -70,8 +74,6 @@ import (
 	"github.com/shirou/magi_link/internal/spell"
 	"github.com/shirou/magi_link/internal/terrain"
 )
-
-// --- TOML schema types ---
 
 type testCase struct {
 	Name        string          `toml:"name"`
@@ -109,11 +111,8 @@ type inputSpec struct {
 }
 
 type spellSpec struct {
-	// Ref references a spell loaded from spells.toml. If empty,
-	// the other fields define an inline spell.
 	Ref string `toml:"ref"`
 
-	// Inline spell definition (used when Ref is empty)
 	ID            string            `toml:"id"`
 	Type          string            `toml:"type"`
 	Shape         spell.TargetShape `toml:"shape"`
@@ -125,20 +124,29 @@ type spellSpec struct {
 	StackingField string            `toml:"stacking_field"`
 	StackingValue int               `toml:"stacking_value"`
 	ExplodeRadius int               `toml:"explode_radius"`
+	Damage        int               `toml:"damage"`
+	Heal          int               `toml:"heal"`
 }
 
 type expectedSpec struct {
-	HexCount      *int    `toml:"hex_count"`
-	HexCountMin   *int    `toml:"hex_count_min"`
-	HexCountMax   *int    `toml:"hex_count_max"`
-	TargetCount   *int    `toml:"target_count"`
-	ContainsHexes [][]int `toml:"contains_hexes"`
-	ExcludesHexes [][]int `toml:"excludes_hexes"`
-	ContainsUnits []int   `toml:"contains_units"`
-	ExcludesUnits []int   `toml:"excludes_units"`
-}
+	ImpactCount     *int    `toml:"impact_count"`
+	ImpactCountMin  *int    `toml:"impact_count_min"`
+	ImpactCountMax  *int    `toml:"impact_count_max"`
+	ContainsImpacts []int   `toml:"contains_impacts"`
+	ExcludesImpacts []int   `toml:"excludes_impacts"`
 
-// --- Loader / builder ---
+	FieldCount    *int    `toml:"field_count"`
+	FieldCountMin *int    `toml:"field_count_min"`
+	FieldCountMax *int    `toml:"field_count_max"`
+	ContainsField [][]int `toml:"contains_field"`
+	ExcludesField [][]int `toml:"excludes_field"`
+
+	WaypointCount    *int    `toml:"waypoint_count"`
+	WaypointCountMin *int    `toml:"waypoint_count_min"`
+	WaypointCountMax *int    `toml:"waypoint_count_max"`
+	ContainsWaypoints [][]int `toml:"contains_waypoints"`
+	ExcludesWaypoints [][]int `toml:"excludes_waypoints"`
+}
 
 func loadTestCase(path string) (*testCase, error) {
 	var tc testCase
@@ -205,12 +213,12 @@ func buildTestSpells(reg *spell.Registry, specs []spellSpec) ([]*spell.SpellDef,
 			StackingField: s.StackingField,
 			StackingValue: s.StackingValue,
 			ExplodeRadius: s.ExplodeRadius,
+			Damage:        s.Damage,
+			Heal:          s.Heal,
 		})
 	}
 	return spells, nil
 }
-
-// --- Runner ---
 
 func runTestdataCase(t *testing.T, reg *spell.Registry, path string) {
 	t.Helper()
@@ -226,18 +234,15 @@ func runTestdataCase(t *testing.T, reg *spell.Registry, path string) {
 		t.Fatalf("%s: %v", path, err)
 	}
 
-	caster := offsetPair(tc.Input.Caster)
-	clicked := offsetPair(tc.Input.Clicked)
-
 	input := LinkInput{
-		CasterPos:  caster,
-		ClickedHex: clicked,
+		CasterPos:  offsetPair(tc.Input.Caster),
+		ClickedHex: offsetPair(tc.Input.Clicked),
 		Direction:  tc.Input.Direction,
 		Spells:     spells,
 	}
 
 	result := ExecuteLink(input, bf)
-	assertExpected(t, tc.Expected, result.Targets, result.Hexes)
+	assertExpected(t, tc.Expected, result)
 }
 
 func offsetPair(p []int) hex.Hex {
@@ -247,64 +252,73 @@ func offsetPair(p []int) hex.Hex {
 	return hex.OffsetToHex(p[0], p[1])
 }
 
-func assertExpected(t *testing.T, e expectedSpec, targets []spell.Target, hexes []hex.Hex) {
+func assertExpected(t *testing.T, e expectedSpec, result LinkResult) {
 	t.Helper()
 
-	if e.HexCount != nil && len(hexes) != *e.HexCount {
-		t.Errorf("hex_count = %d, want %d", len(hexes), *e.HexCount)
+	// Impact counts + contains/excludes
+	checkCount(t, "impact", len(result.Impacts), e.ImpactCount, e.ImpactCountMin, e.ImpactCountMax)
+	impactSet := make(map[int]bool, len(result.Impacts))
+	for _, im := range result.Impacts {
+		impactSet[im.UnitID] = true
 	}
-	if e.HexCountMin != nil && len(hexes) < *e.HexCountMin {
-		t.Errorf("hex_count = %d, want >= %d", len(hexes), *e.HexCountMin)
-	}
-	if e.HexCountMax != nil && len(hexes) > *e.HexCountMax {
-		t.Errorf("hex_count = %d, want <= %d", len(hexes), *e.HexCountMax)
-	}
-	if e.TargetCount != nil && len(targets) != *e.TargetCount {
-		t.Errorf("target_count = %d, want %d", len(targets), *e.TargetCount)
-	}
-
-	hexSet := make(map[hex.Hex]bool, len(hexes))
-	for _, h := range hexes {
-		hexSet[h] = true
-	}
-	for _, ch := range e.ContainsHexes {
-		if len(ch) != 2 {
-			continue
-		}
-		h := hex.OffsetToHex(ch[0], ch[1])
-		if !hexSet[h] {
-			t.Errorf("expected hex [%d, %d] not found in result", ch[0], ch[1])
+	for _, id := range e.ContainsImpacts {
+		if !impactSet[id] {
+			t.Errorf("expected impact unit ID %d not found", id)
 		}
 	}
-	for _, eh := range e.ExcludesHexes {
-		if len(eh) != 2 {
-			continue
-		}
-		h := hex.OffsetToHex(eh[0], eh[1])
-		if hexSet[h] {
-			t.Errorf("unexpected hex [%d, %d] found in result", eh[0], eh[1])
+	for _, id := range e.ExcludesImpacts {
+		if impactSet[id] {
+			t.Errorf("unexpected impact unit ID %d found", id)
 		}
 	}
 
-	unitSet := make(map[int]bool)
-	for _, tg := range targets {
-		if tg.UnitID != -1 {
-			unitSet[tg.UnitID] = true
-		}
+	// Field counts + contains/excludes
+	checkCount(t, "field", len(result.Field), e.FieldCount, e.FieldCountMin, e.FieldCountMax)
+	checkHexes(t, "field", result.Field, e.ContainsField, e.ExcludesField)
+
+	// Waypoints counts + contains/excludes
+	checkCount(t, "waypoint", len(result.Waypoints), e.WaypointCount, e.WaypointCountMin, e.WaypointCountMax)
+	checkHexes(t, "waypoint", result.Waypoints, e.ContainsWaypoints, e.ExcludesWaypoints)
+}
+
+func checkCount(t *testing.T, label string, got int, exact, min, max *int) {
+	t.Helper()
+	if exact != nil && got != *exact {
+		t.Errorf("%s_count = %d, want %d", label, got, *exact)
 	}
-	for _, uid := range e.ContainsUnits {
-		if !unitSet[uid] {
-			t.Errorf("expected unit ID %d not found in targets", uid)
-		}
+	if min != nil && got < *min {
+		t.Errorf("%s_count = %d, want >= %d", label, got, *min)
 	}
-	for _, uid := range e.ExcludesUnits {
-		if unitSet[uid] {
-			t.Errorf("unexpected unit ID %d found in targets", uid)
-		}
+	if max != nil && got > *max {
+		t.Errorf("%s_count = %d, want <= %d", label, got, *max)
 	}
 }
 
-// --- Entry point: discover & run all testdata files ---
+func checkHexes(t *testing.T, label string, hexes []hex.Hex, contains, excludes [][]int) {
+	t.Helper()
+	set := make(map[hex.Hex]bool, len(hexes))
+	for _, h := range hexes {
+		set[h] = true
+	}
+	for _, p := range contains {
+		if len(p) != 2 {
+			t.Fatalf("malformed %s hex entry %v (want [col, row])", label, p)
+		}
+		h := hex.OffsetToHex(p[0], p[1])
+		if !set[h] {
+			t.Errorf("expected %s hex [%d, %d] not found", label, p[0], p[1])
+		}
+	}
+	for _, p := range excludes {
+		if len(p) != 2 {
+			t.Fatalf("malformed %s hex entry %v (want [col, row])", label, p)
+		}
+		h := hex.OffsetToHex(p[0], p[1])
+		if set[h] {
+			t.Errorf("unexpected %s hex [%d, %d] found", label, p[0], p[1])
+		}
+	}
+}
 
 // TestResolveFromTestdata discovers all *.toml files in testdata/ and
 // runs each as a subtest. New cases can be added by dropping files in

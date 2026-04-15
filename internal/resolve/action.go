@@ -7,67 +7,69 @@ import (
 	"github.com/shirou/magi_link/internal/terrain"
 )
 
-// applyAction processes one action-type spell step against the current
-// LinkState. It reads state.Targets and writes diffs into result.
-// Returns the (possibly modified) state — e.g. when ClearTargets is set.
-func applyAction(state LinkState, s *spell.SpellDef, casterPos hex.Hex, bf Battlefield, result *LinkResult) LinkState {
-	hitHexes := expandHitHexes(state.Targets, s.ExplodeRadius, bf)
-	for _, h := range hitHexes {
-		applyHit(s, h, bf, result)
-	}
-	// Expose the full hit set (including explode_radius expansion) to
-	// state.Hexes so VFX and cast preview cover the actual area of effect.
-	state = recordHexes(state, hitHexes, nil)
-
-	// Movement uses the pre-expansion target list and caster position
-	// to derive push/pull direction.
-	if s.Movement != "" {
-		applyMovement(state.Targets, s.Movement, casterPos, bf, result)
-	}
-
-	if s.ClearTargets {
-		state.Targets = nil
-	}
-	return state
-}
-
-// expandHitHexes returns the set of hexes affected by the action,
-// including explode_radius neighbors. Deduplicated and in-bounds.
-func expandHitHexes(targets []spell.Target, explodeRadius int, bf Battlefield) []hex.Hex {
-	grid := bf.GridBounds()
-	raw := make([]hex.Hex, 0, len(targets))
-	for _, t := range targets {
-		center := hex.NewHex(t.HexQ, t.HexR)
-		if grid.InBounds(center) {
-			raw = append(raw, center)
-		}
-		if explodeRadius > 0 {
-			for _, h := range center.Area(explodeRadius) {
-				if grid.InBounds(h) {
-					raw = append(raw, h)
+// applyAction consumes the current LinkState and writes damage / heal /
+// status / terrain / movement diffs into result. It returns the state
+// (possibly mutated by ExplodeRadius expansion and ClearState).
+//
+//   - ExplodeRadius > 0 expands around each Origin, adding to Field and
+//     any living units within to Impacts.
+//   - Damage / heal / status / combos / movement apply to Impacts only.
+//   - TerrainCreate / TerrainInteractions apply to Field only.
+func applyAction(state LinkState, s *spell.SpellDef, input LinkInput, bf Battlefield, result *LinkResult) LinkState {
+	if s.ExplodeRadius > 0 {
+		grid := bf.GridBounds()
+		for _, center := range state.Origins {
+			for _, h := range center.Area(s.ExplodeRadius) {
+				if !grid.InBounds(h) {
+					continue
+				}
+				state = addField(state, h)
+				if u := bf.UnitAt(h); u.IsAlive() {
+					state = addImpact(state, u.ID, h)
 				}
 			}
 		}
 	}
-	return dedupHexes(raw)
+
+	for _, im := range state.Impacts {
+		if u := bf.UnitAt(im.Pos); u.IsAlive() {
+			applyUnitEffects(s, u, result)
+		}
+	}
+
+	for _, h := range state.Field {
+		applyHexEffects(s, h, bf, result)
+	}
+
+	if s.Movement != "" {
+		applyMovement(state.Impacts, s.Movement, input.CasterPos, bf, result)
+	}
+
+	if s.ClearState {
+		state.Impacts = nil
+		state.Field = nil
+		state.Waypoints = nil
+	}
+	return state
 }
 
-// applyHit writes the action's damage / heal / status / terrain effects
-// for a single hex into result. Unit-targeted effects no-op when the
-// hex has no living unit; terrain effects apply regardless.
-func applyHit(s *spell.SpellDef, h hex.Hex, bf Battlefield, result *LinkResult) {
-	u := bf.UnitAt(h)
-
-	if s.Damage > 0 && u.IsAlive() {
+// applyUnitEffects writes damage / heal / status changes for a single
+// living unit into result.
+func applyUnitEffects(s *spell.SpellDef, u *entity.Unit, result *LinkResult) {
+	if s.Damage > 0 {
+		if result.Damage == nil {
+			result.Damage = make(map[int]int)
+		}
 		dmg := s.Damage + applyStatusCombos(s.StatusCombos, u, result)
 		result.Damage[u.ID] += dmg
 	}
-
-	if s.Heal > 0 && u.IsAlive() {
+	if s.Heal > 0 {
+		if result.Healing == nil {
+			result.Healing = make(map[int]int)
+		}
 		result.Healing[u.ID] += s.Heal
 	}
-
-	if s.Status != "" && u.IsAlive() {
+	if s.Status != "" {
 		if st := entity.ParseStatus(s.Status); st != entity.StatusNone {
 			result.StatusApplied = append(result.StatusApplied, StatusChange{
 				UnitID: u.ID,
@@ -76,14 +78,16 @@ func applyHit(s *spell.SpellDef, h hex.Hex, bf Battlefield, result *LinkResult) 
 			})
 		}
 	}
+}
 
+// applyHexEffects writes terrain changes for a hex.
+func applyHexEffects(s *spell.SpellDef, h hex.Hex, bf Battlefield, result *LinkResult) {
 	if s.TerrainCreate != "" {
 		result.TerrainChanges = append(result.TerrainChanges, TerrainChange{
 			Pos:  h,
 			Type: terrain.ParseTerrainType(s.TerrainCreate),
 		})
 	}
-
 	if len(s.TerrainInteractions) > 0 {
 		name := bf.TerrainAt(h).TypeName()
 		for _, ti := range s.TerrainInteractions {
@@ -98,10 +102,8 @@ func applyHit(s *spell.SpellDef, h hex.Hex, bf Battlefield, result *LinkResult) 
 	}
 }
 
-// applyStatusCombos checks the spell's status combos against the unit's
-// current statuses. For each matching combo it records the configured
-// status removal/application into result and returns the accumulated
-// bonus damage.
+// applyStatusCombos returns the bonus damage for combos matching u's
+// existing statuses, and records configured removals / applications.
 func applyStatusCombos(combos []spell.StatusCombo, u *entity.Unit, result *LinkResult) int {
 	var bonus int
 	for _, combo := range combos {
@@ -129,42 +131,37 @@ func applyStatusCombos(combos []spell.StatusCombo, u *entity.Unit, result *LinkR
 	return bonus
 }
 
-// applyMovement computes push/pull moves for each target and appends
-// valid moves to result.UnitsMoved. Destinations that are blocked, out
-// of bounds, occupied by a living unit, or already claimed by an
-// earlier move in the same action are silently skipped.
-func applyMovement(targets []spell.Target, movement string, casterPos hex.Hex, bf Battlefield, result *LinkResult) {
+// applyMovement pushes / pulls each Impact unit one hex relative to the
+// caster. Blocked / occupied / claimed destinations are silently skipped.
+func applyMovement(impacts []Impact, movement string, casterPos hex.Hex, bf Battlefield, result *LinkResult) {
 	claimed := make(map[hex.Hex]bool)
-	for _, t := range targets {
-		pos := hex.NewHex(t.HexQ, t.HexR)
-		u := bf.UnitAt(pos)
+	for _, im := range impacts {
+		u := bf.UnitAt(im.Pos)
 		if !u.IsAlive() {
 			continue
 		}
 		var dir int
 		switch movement {
 		case "push":
-			dir = directionRelative(pos, casterPos, true)
+			dir = directionRelative(im.Pos, casterPos, true)
 		case "pull":
-			dir = directionRelative(pos, casterPos, false)
+			dir = directionRelative(im.Pos, casterPos, false)
 		default:
 			continue
 		}
-		to := pos.Direction(dir)
+		to := im.Pos.Direction(dir)
 		if claimed[to] || !canMoveTo(to, bf) {
 			continue
 		}
 		claimed[to] = true
 		result.UnitsMoved = append(result.UnitsMoved, UnitMove{
 			UnitID: u.ID,
-			From:   pos,
+			From:   im.Pos,
 			To:     to,
 		})
 	}
 }
 
-// directionRelative returns the hex direction (0-5) from `from` that
-// either maximises (away=true) or minimises (away=false) distance from `ref`.
 func directionRelative(from, ref hex.Hex, away bool) int {
 	bestDir := 0
 	bestDist := from.Distance(ref)
@@ -178,8 +175,6 @@ func directionRelative(from, ref hex.Hex, away bool) int {
 	return bestDir
 }
 
-// canMoveTo reports whether a unit can legally be placed at h.
-// Blocks walls, cliffs, out-of-bounds, and hexes occupied by a living unit.
 func canMoveTo(h hex.Hex, bf Battlefield) bool {
 	if !bf.GridBounds().InBounds(h) {
 		return false

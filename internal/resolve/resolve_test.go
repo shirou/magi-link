@@ -32,13 +32,12 @@ func (m *mockBF) UnitAt(h hex.Hex) *entity.Unit {
 	}
 	return nil
 }
-func (m *mockBF) AllUnits() []*entity.Unit            { return m.units }
+func (m *mockBF) AllUnits() []*entity.Unit             { return m.units }
 func (m *mockBF) TerrainAt(h hex.Hex) *terrain.Terrain { return m.terrMap.Get(h) }
 func (m *mockBF) GridBounds() *hex.Grid                { return m.grid }
 func (m *mockBF) IsWall(h hex.Hex) bool                { return m.terrMap.Get(h).IsWall() }
 func (m *mockBF) HasLineOfSight(from, to hex.Hex) bool { return m.terrMap.HasLineOfSight(from, to) }
 
-// hexSet collects unique hexes for assertion convenience.
 func hexSet(hexes []hex.Hex) map[hex.Hex]bool {
 	s := make(map[hex.Hex]bool, len(hexes))
 	for _, h := range hexes {
@@ -47,11 +46,22 @@ func hexSet(hexes []hex.Hex) map[hex.Hex]bool {
 	return s
 }
 
-// --- Tests: basic shape semantics (modifier-model) ---
+func impactUnitIDs(impacts []Impact) map[int]bool {
+	s := make(map[int]bool, len(impacts))
+	for _, im := range impacts {
+		s[im.UnitID] = true
+	}
+	return s
+}
+
+// --- Shape semantics ---
 
 func TestSelfSetsOriginToCaster(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(2, 4)
+	player := entity.NewUnit(1, "Player", caster, 100, 0)
+	player.IsPlayer = true
+	bf.units = []*entity.Unit{player}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
@@ -59,21 +69,19 @@ func TestSelfSetsOriginToCaster(t *testing.T) {
 		Spells:     []*spell.SpellDef{{ID: "self", Type: "target", Shape: spell.ShapeSelf}},
 	}, bf)
 
-	if len(result.Hexes) != 1 || result.Hexes[0] != caster {
-		t.Errorf("self: want single caster hex, got %v", result.Hexes)
+	if !impactUnitIDs(result.Impacts)[1] {
+		t.Errorf("self: want caster in Impacts, got %v", result.Impacts)
 	}
-	if len(result.Targets) != 1 {
-		t.Errorf("self: want 1 target, got %d", len(result.Targets))
+	if len(result.Field) != 0 {
+		t.Errorf("self: Field should be empty, got %v", result.Field)
 	}
 }
 
-func TestSingleSetsOriginToClicked(t *testing.T) {
+func TestSingleHitsClickedUnit(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
 	target := hex.NewHex(2, 0)
-
-	enemy := entity.NewUnit(10, "Echo", target, 30, 0)
-	bf.units = []*entity.Unit{enemy}
+	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
@@ -81,18 +89,16 @@ func TestSingleSetsOriginToClicked(t *testing.T) {
 		Spells:     []*spell.SpellDef{{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5}},
 	}, bf)
 
-	if len(result.Hexes) != 1 || result.Hexes[0] != target {
-		t.Errorf("single: want clicked hex, got %v", result.Hexes)
-	}
-	if len(result.Targets) != 1 || result.Targets[0].UnitID != 10 {
-		t.Errorf("single: want unit 10, got %v", result.Targets)
+	if !impactUnitIDs(result.Impacts)[10] {
+		t.Errorf("single: want unit 10 in Impacts, got %v", result.Impacts)
 	}
 }
 
-func TestSingleOutOfRange(t *testing.T) {
+func TestSingleOutOfRangeOnlyKeepsSeedImpact(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
 	target := hex.NewHex(6, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
@@ -100,188 +106,19 @@ func TestSingleOutOfRange(t *testing.T) {
 		Spells:     []*spell.SpellDef{{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5}},
 	}, bf)
 
-	if len(result.Hexes) != 0 {
-		t.Errorf("out-of-range single: want 0 hexes, got %d", len(result.Hexes))
+	// seedInitialState auto-targets the clicked unit independent of
+	// per-spell range. The UI gates clicks to in-range hexes, so this
+	// path is only reached by direct resolve callers (tests, AI).
+	if len(result.Impacts) != 1 || result.Impacts[0].UnitID != 10 {
+		t.Errorf("out-of-range single: want seed impact only, got %v", result.Impacts)
 	}
 }
 
-func TestLineWalksAndBecomesOrigin(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells:    []*spell.SpellDef{{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4}},
-	}, bf)
-
-	if len(result.Hexes) != 4 {
-		t.Errorf("line r=4: want 4 hexes, got %d", len(result.Hexes))
-	}
-	for _, h := range result.Hexes {
-		if h.R != caster.R {
-			t.Errorf("dir 0: hex %v off axis from %v", h, caster)
-		}
-	}
-}
-
-func TestLineStopsAtWall(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	wallHex := caster.Direction(0).Direction(0) // 2 steps
-	bf.terrMap.Set(wallHex, &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
-
-	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells:    []*spell.SpellDef{{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 6}},
-	}, bf)
-
-	if len(result.Hexes) != 1 {
-		t.Errorf("line wall stop: want 1 hex before wall, got %d", len(result.Hexes))
-	}
-}
-
-func TestAreaExpandsAroundOrigin(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(5, 5)
-
-	result := ExecuteLink(LinkInput{
-		CasterPos:  caster,
-		ClickedHex: caster,
-		Spells: []*spell.SpellDef{
-			{ID: "self", Type: "target", Shape: spell.ShapeSelf},
-			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 4, Radius: 1},
-		},
-	}, bf)
-
-	// self moves origin to caster; area r=1 adds 7 hexes around it.
-	if len(result.Hexes) < 7 {
-		t.Errorf("self+area: want at least 7 hexes, got %d", len(result.Hexes))
-	}
-	if !hexSet(result.Hexes)[caster] {
-		t.Errorf("self+area: center hex missing")
-	}
-}
-
-func TestWeakestOverridesOrigin(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	e1 := entity.NewUnit(10, "Echo", hex.NewHex(5, 3), 30, 0)
-	e2 := entity.NewUnit(11, "Shard", hex.NewHex(8, 5), 15, 0)
-	player := entity.NewUnit(1, "Player", caster, 100, 60)
-	player.IsPlayer = true
-	bf.units = []*entity.Unit{player, e1, e2}
-
-	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Spells:    []*spell.SpellDef{{ID: "weakest", Type: "target", Shape: spell.ShapeWeakest}},
-	}, bf)
-
-	if len(result.Targets) != 1 || result.Targets[0].UnitID != 11 {
-		t.Errorf("weakest: want unit 11 (HP=15), got %v", result.Targets)
-	}
-}
-
-// --- Tests: bucket-relay (origins propagate through steps) ---
-
-func TestLineThenAreaUsesImpactAsCenter(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	// line walks 3 steps from caster in dir 0, impact at (5,4) effectively.
-	// area r=1 then fires from impact hex, adding neighbors.
-	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells: []*spell.SpellDef{
-			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 3},
-			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 20, Radius: 1},
-		},
-	}, bf)
-
-	// Line contributes 3 hexes; area around (5,4) contributes 7 (may overlap line).
-	// Ensure the hex (5,4) + its neighbors are present.
-	impact := caster.Direction(0).Direction(0).Direction(0)
-	set := hexSet(result.Hexes)
-	if !set[impact] {
-		t.Errorf("line→area: impact hex %v missing from hexes", impact)
-	}
-	for _, n := range impact.Neighbors() {
-		if !set[n] {
-			t.Errorf("line→area: impact neighbor %v missing", n)
-		}
-	}
-}
-
-func TestThreeWayExpandsOriginsForNextLine(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(5, 5)
-
-	// self → 3way → line: 3 lines from 3 adjacent hexes.
-	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells: []*spell.SpellDef{
-			{ID: "self", Type: "target", Shape: spell.ShapeSelf},
-			{ID: "3way", Type: "target", Shape: spell.Shape3Way},
-			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 2},
-		},
-	}, bf)
-
-	// Each of 3 origins walks 2 steps → up to 6 hexes walked (some may dup).
-	// Plus the caster hex from self step.
-	set := hexSet(result.Hexes)
-	if !set[caster] {
-		t.Errorf("3way→line: caster missing")
-	}
-	// Expect at least 6 unique hexes from the 3 line walks, plus caster.
-	if len(result.Hexes) < 5 {
-		t.Errorf("3way→line: want at least 5 hexes, got %d", len(result.Hexes))
-	}
-}
-
-func TestPierceFlagExtendsLineThroughWall(t *testing.T) {
-	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	// place wall 1 step ahead
-	wall := caster.Direction(0)
-	bf.terrMap.Set(wall, &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
-
-	// Without pierce, line stops before wall → 0 hexes.
-	plain := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells:    []*spell.SpellDef{{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4}},
-	}, bf)
-	if len(plain.Hexes) != 0 {
-		t.Errorf("wall stops line: want 0 hexes, got %d", len(plain.Hexes))
-	}
-
-	// With pierce flag, line walks full range through the wall.
-	pierced := ExecuteLink(LinkInput{
-		CasterPos: caster,
-		Direction: 0,
-		Spells: []*spell.SpellDef{
-			{ID: "pierce", Type: "target", Shape: spell.ShapePierce},
-			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4},
-		},
-	}, bf)
-	if len(pierced.Hexes) != 4 {
-		t.Errorf("pierce→line: want 4 hexes through wall, got %d", len(pierced.Hexes))
-	}
-}
-
-func TestHomingOverridesOriginsToNearestEnemy(t *testing.T) {
+func TestLineStopsAtFirstUnit(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-
-	// Two enemies at different distances.
-	near := hex.NewHex(3, 0)
-	far := hex.NewHex(8, 0)
+	near := hex.NewHex(2, 0)
+	far := hex.NewHex(5, 0)
 	bf.units = []*entity.Unit{
 		entity.NewUnit(10, "Near", near, 30, 0),
 		entity.NewUnit(11, "Far", far, 30, 0),
@@ -289,93 +126,259 @@ func TestHomingOverridesOriginsToNearestEnemy(t *testing.T) {
 
 	result := ExecuteLink(LinkInput{
 		CasterPos: caster,
+		Direction: 0,
 		Spells: []*spell.SpellDef{
-			{ID: "homing", Type: "target", Shape: spell.ShapeHoming},
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 6, Stacking: "full"},
 		},
 	}, bf)
 
-	if len(result.Targets) != 1 || result.Targets[0].UnitID != 10 {
-		t.Errorf("homing: want unit 10 (nearest), got %v", result.Targets)
+	ids := impactUnitIDs(result.Impacts)
+	if !ids[10] || ids[11] {
+		t.Errorf("line stops at near enemy only, got %v", result.Impacts)
 	}
 }
 
-func TestBounceFlagReflectsOffWall(t *testing.T) {
+func TestPierceLineHitsAllUnitsOnPath(t *testing.T) {
 	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
-
-	// wall 2 steps ahead; bounce should make line reflect back
-	wall := caster.Direction(0).Direction(0)
-	bf.terrMap.Set(wall, &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
+	caster := hex.NewHex(0, 0)
+	bf.units = []*entity.Unit{
+		entity.NewUnit(10, "A", hex.NewHex(2, 0), 30, 0),
+		entity.NewUnit(11, "B", hex.NewHex(4, 0), 30, 0),
+	}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos: caster,
 		Direction: 0,
 		Spells: []*spell.SpellDef{
-			{ID: "bounce", Type: "target", Shape: spell.ShapeBounce},
-			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4},
+			{ID: "pierce", Type: "target", Shape: spell.ShapePierce},
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 5, Stacking: "full"},
 		},
 	}, bf)
 
-	// Walks 1 step forward, then wall → bounces: walks back through caster
-	// and continues. Range 4 → 1 forward + up to 3 backward (all in grid).
-	if len(result.Hexes) < 3 {
-		t.Errorf("bounce→line: want at least 3 hexes (walk+reflect), got %d", len(result.Hexes))
+	ids := impactUnitIDs(result.Impacts)
+	if !ids[10] || !ids[11] {
+		t.Errorf("pierce line: want both enemies hit, got %v", result.Impacts)
 	}
 }
 
-// --- Same-shape stacking ---
-
-func TestAreaStackingIncreasesRadius(t *testing.T) {
+func TestLineEndPosBecomesNextOrigin(t *testing.T) {
 	bf := newMockBF()
-	caster := hex.NewHex(5, 5)
+	caster := hex.NewHex(0, 0)
+	// No units on line — it walks full range.
+	result := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Direction: 0,
+		Spells: []*spell.SpellDef{
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 3, Stacking: "full"},
+			{ID: "dmg", Type: "action", Damage: 5, ExplodeRadius: 0},
+		},
+	}, bf)
 
-	area1 := &spell.SpellDef{
-		ID: "area", Type: "target", Shape: spell.ShapeArea,
-		Range: 4, Radius: 1, Stacking: "increment", StackingField: "radius", StackingValue: 1,
+	// Waypoints: 3 path hexes. No Impacts, no damage.
+	if len(result.Waypoints) != 3 {
+		t.Errorf("want 3 waypoints, got %d", len(result.Waypoints))
 	}
-
-	r1 := ExecuteLink(LinkInput{CasterPos: caster, ClickedHex: caster,
-		Spells: []*spell.SpellDef{
-			{ID: "self", Type: "target", Shape: spell.ShapeSelf},
-			area1,
-		}}, bf)
-
-	r2 := ExecuteLink(LinkInput{CasterPos: caster, ClickedHex: caster,
-		Spells: []*spell.SpellDef{
-			{ID: "self", Type: "target", Shape: spell.ShapeSelf},
-			area1, area1,
-		}}, bf)
-
-	if len(r2.Hexes) <= len(r1.Hexes) {
-		t.Errorf("stacking: want more hexes with 2 areas (%d) than 1 (%d)", len(r2.Hexes), len(r1.Hexes))
+	if len(result.Impacts) != 0 {
+		t.Errorf("no units; want 0 Impacts, got %v", result.Impacts)
 	}
 }
 
-func TestActionSpellsSkipped(t *testing.T) {
+func TestAreaMovesOriginToClickedAndFillsField(t *testing.T) {
 	bf := newMockBF()
-	caster := hex.NewHex(2, 4)
+	caster := hex.NewHex(0, 4)
+	clicked := hex.NewHex(5, 4) // middle of the 12x10 mock grid
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", clicked, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: hex.NewHex(3, 4),
+		ClickedHex: clicked,
 		Spells: []*spell.SpellDef{
-			{ID: "fireball", Type: "action"},
-			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
-			{ID: "heal", Type: "action"},
+			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 10, Radius: 1},
 		},
 	}, bf)
 
-	if len(result.Hexes) != 1 {
-		t.Errorf("action skip: want 1 hex from single, got %d", len(result.Hexes))
+	if len(result.Field) != 7 {
+		t.Errorf("area r=1 field: want 7, got %d", len(result.Field))
+	}
+	if !hexSet(result.Field)[clicked] {
+		t.Errorf("area: clicked hex missing from Field")
 	}
 }
+
+func TestWeakestOverridesOrigin(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(2, 4)
+	player := entity.NewUnit(1, "Player", caster, 100, 60)
+	player.IsPlayer = true
+	bf.units = []*entity.Unit{
+		player,
+		entity.NewUnit(10, "Echo", hex.NewHex(5, 3), 30, 0),
+		entity.NewUnit(11, "Shard", hex.NewHex(8, 5), 15, 0),
+	}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Spells:    []*spell.SpellDef{{ID: "weakest", Type: "target", Shape: spell.ShapeWeakest}},
+	}, bf)
+
+	if !impactUnitIDs(result.Impacts)[11] {
+		t.Errorf("weakest: want unit 11 (HP=15) in Impacts, got %v", result.Impacts)
+	}
+}
+
+// --- Bucket-relay across steps ---
+
+func TestAreaRecentersOnClickedEvenAfterLine(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(4, 0)
+
+	// line → area. Area recenters Origins to ClickedHex regardless of
+	// line's endPos: area's hex ring is around clicked.
+	result := ExecuteLink(LinkInput{
+		CasterPos:  caster,
+		ClickedHex: clicked,
+		Direction:  0,
+		Spells: []*spell.SpellDef{
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 2, Stacking: "full"},
+			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 10, Radius: 1},
+		},
+	}, bf)
+
+	if !hexSet(result.Field)[clicked] {
+		t.Errorf("area recentered on clicked: want clicked in Field")
+	}
+}
+
+// --- Action spells consume Impacts ---
+
+func TestActionDamageHitsImpact(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos:  caster,
+		ClickedHex: target,
+		Spells: []*spell.SpellDef{
+			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
+			{ID: "dmg", Type: "action", Damage: 7},
+		},
+	}, bf)
+
+	if result.Damage[10] != 7 {
+		t.Errorf("want Damage[10]=7, got %v", result.Damage)
+	}
+}
+
+func TestExplodeCentersOnOrigin(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(5, 0)
+	// Enemy at clicked; enemy one hex further. Fireball radius=1 should
+	// catch both (center + neighbor in dir 0).
+	bf.units = []*entity.Unit{
+		entity.NewUnit(10, "Center", clicked, 30, 0),
+		entity.NewUnit(11, "Next", clicked.Direction(0), 30, 0),
+	}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos:  caster,
+		ClickedHex: clicked,
+		Spells: []*spell.SpellDef{
+			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 10},
+			{ID: "fireball", Type: "action", Damage: 3, ExplodeRadius: 1},
+		},
+	}, bf)
+
+	if result.Damage[10] != 3 || result.Damage[11] != 3 {
+		t.Errorf("explode: want both hit for 3, got %v", result.Damage)
+	}
+}
+
+// --- Modifier flags ---
+
+func TestPierceFlagBypassesWall(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	wall := caster.Direction(0)
+	bf.terrMap.Set(wall, &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
+
+	plain := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Direction: 0,
+		Spells: []*spell.SpellDef{
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4, Stacking: "full"},
+		},
+	}, bf)
+	if len(plain.Waypoints) != 0 {
+		t.Errorf("non-pierce: wall stops line, want 0 waypoints, got %d", len(plain.Waypoints))
+	}
+
+	pierced := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Direction: 0,
+		Spells: []*spell.SpellDef{
+			{ID: "pierce", Type: "target", Shape: spell.ShapePierce},
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 4, Stacking: "full"},
+		},
+	}, bf)
+	if len(pierced.Waypoints) != 4 {
+		t.Errorf("pierce: want 4 waypoints through wall, got %d", len(pierced.Waypoints))
+	}
+}
+
+func TestHomingSelectsNearestEnemy(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	bf.units = []*entity.Unit{
+		entity.NewUnit(10, "Near", hex.NewHex(3, 0), 30, 0),
+		entity.NewUnit(11, "Far", hex.NewHex(8, 0), 30, 0),
+	}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Spells:    []*spell.SpellDef{{ID: "homing", Type: "target", Shape: spell.ShapeHoming}},
+	}, bf)
+
+	ids := impactUnitIDs(result.Impacts)
+	if !ids[10] || ids[11] {
+		t.Errorf("homing: want near only, got %v", result.Impacts)
+	}
+}
+
+// --- Stacking ---
+
+func TestAreaStackingIncreasesField(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(5, 5)
+
+	area := &spell.SpellDef{
+		ID: "area", Type: "target", Shape: spell.ShapeArea,
+		Range: 10, Radius: 1,
+		Stacking: "increment", StackingField: "radius", StackingValue: 1,
+	}
+
+	r1 := ExecuteLink(LinkInput{CasterPos: caster, ClickedHex: caster,
+		Spells: []*spell.SpellDef{area}}, bf)
+	r2 := ExecuteLink(LinkInput{CasterPos: caster, ClickedHex: caster,
+		Spells: []*spell.SpellDef{area, area}}, bf)
+
+	if len(r2.Field) <= len(r1.Field) {
+		t.Errorf("stacking: want more Field with 2 stacks (%d) than 1 (%d)",
+			len(r2.Field), len(r1.Field))
+	}
+}
+
+// --- Empty / malformed chains ---
 
 func TestEmptyChain(t *testing.T) {
 	bf := newMockBF()
 	result := ExecuteLink(LinkInput{CasterPos: hex.NewHex(0, 0)}, bf)
 
-	if len(result.Targets) != 0 || len(result.Hexes) != 0 {
-		t.Error("empty chain should produce nothing")
+	if len(result.Impacts) != 0 || len(result.Field) != 0 || len(result.Waypoints) != 0 {
+		t.Errorf("empty chain: want empty result, got %+v", result)
 	}
 }
 
@@ -395,7 +398,7 @@ func TestTerrainFilterCollectsMatchingHexes(t *testing.T) {
 		}},
 	}, bf)
 
-	if len(result.Hexes) != 2 {
-		t.Errorf("fire filter: want 2 matching hexes, got %d", len(result.Hexes))
+	if len(result.Field) != 2 {
+		t.Errorf("terrain_filter: want 2 Field hexes, got %d", len(result.Field))
 	}
 }

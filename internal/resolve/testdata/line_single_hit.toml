@@ -1,0 +1,52 @@
+# Line stops at the first living unit. Only that unit is Impacted.
+# Waypoints contain the path hexes before the hit.
+
+name        = "line stops at first unit"
+description = "Non-pierce line: one hit, waypoints up to (but not including) the hit hex"
+
+[battlefield]
+grid_width  = 20
+grid_height = 6
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 0]
+hp     = 100
+player = true
+
+# First enemy 2 hexes away in dir 0.
+[[battlefield.units]]
+id   = 10
+name = "Near"
+pos  = [2, 0]
+hp   = 30
+
+# Second enemy further along. Should NOT be hit (line stopped).
+[[battlefield.units]]
+id   = 11
+name = "Far"
+pos  = [5, 0]
+hp   = 30
+
+[input]
+caster    = [0, 0]
+clicked   = [8, 0]
+direction = 0
+
+[[input.spells]]
+id       = "line"
+type     = "target"
+shape    = "line"
+range    = 6
+stacking = "full"
+
+[expected]
+impact_count     = 1
+contains_impacts = [10]
+excludes_impacts = [11]
+field_count      = 0
+# Waypoints: only hex [1, 0] — the path before the first hit at [2, 0].
+waypoint_count    = 1
+contains_waypoints = [[1, 0]]
+excludes_waypoints = [[2, 0]]   # hit hex is NOT a waypoint

@@ -88,9 +88,12 @@ type BattleState struct {
 	Outcome        BattleOutcome
 	enemyTurnQueue []*entity.Unit
 
-	// CastPreview holds the hexes that the current chain would affect if
-	// cast at HoverHex. Recomputed each frame during PhaseChainTarget.
-	CastPreview      []hex.Hex
+	// Cast preview state, recomputed each frame during PhaseChainTarget.
+	// Impacts / Field / Waypoints are stored separately so future VFX
+	// work can render them with distinct colors or layers.
+	PreviewImpacts   []hex.Hex
+	PreviewField     []hex.Hex
+	PreviewWaypoints []hex.Hex
 	CastPreviewUnits map[int]bool // unit IDs that will take damage / heal / move
 }
 
@@ -291,8 +294,8 @@ func (b *BattleState) executeEnemyAction(u *entity.Unit, act EnemyAction) {
 			return
 		}
 		b.applyLinkResult(resolve.LinkResult{
-			Damage: map[int]int{act.Target.ID: u.MeleeDamage},
-			Hexes:  []hex.Hex{act.Target.Pos},
+			Damage:  map[int]int{act.Target.ID: u.MeleeDamage},
+			Impacts: []resolve.Impact{{UnitID: act.Target.ID, Pos: act.Target.Pos}},
 		})
 	case ActionWait:
 		// Nothing; the turn simply advances.
@@ -393,8 +396,7 @@ func (b *BattleState) updateChainTarget() {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) ||
 		inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		b.Phase = PhasePlayerSelect
-		b.CastPreview = nil
-		b.CastPreviewUnits = nil
+		b.clearCastPreview()
 		return
 	}
 
@@ -402,14 +404,24 @@ func (b *BattleState) updateChainTarget() {
 	// produce no effect (preview empty — e.g. target spell's range not met);
 	// otherwise the player loses mana with no visible outcome.
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && b.HoverValid {
-		if len(b.CastPreview) == 0 {
+		if !b.hasCastPreview() {
 			return
 		}
 		b.executeLinkAt(b.HoverHex)
 		b.Phase = PhasePlayerSelect
-		b.CastPreview = nil
-		b.CastPreviewUnits = nil
+		b.clearCastPreview()
 	}
+}
+
+func (b *BattleState) clearCastPreview() {
+	b.PreviewImpacts = nil
+	b.PreviewField = nil
+	b.PreviewWaypoints = nil
+	b.CastPreviewUnits = nil
+}
+
+func (b *BattleState) hasCastPreview() bool {
+	return len(b.PreviewImpacts) > 0 || len(b.PreviewField) > 0 || len(b.PreviewWaypoints) > 0
 }
 
 // refreshCastPreview dry-runs the current chain at the hover hex so the
@@ -417,8 +429,7 @@ func (b *BattleState) updateChainTarget() {
 // resolve is pure (no bf mutation), so this is safe to call every frame.
 func (b *BattleState) refreshCastPreview() {
 	if !b.HoverValid || len(b.Chain.Slots) == 0 {
-		b.CastPreview = nil
-		b.CastPreviewUnits = nil
+		b.clearCastPreview()
 		return
 	}
 
@@ -438,7 +449,9 @@ func (b *BattleState) refreshCastPreview() {
 		Direction:  dir,
 		Spells:     spells,
 	}, b)
-	b.CastPreview = result.Hexes
+	b.PreviewImpacts = impactPositions(result.Impacts)
+	b.PreviewField = result.Field
+	b.PreviewWaypoints = result.Waypoints
 	b.CastPreviewUnits = make(map[int]bool, len(result.Damage)+len(result.Healing)+len(result.UnitsMoved))
 	for id := range result.Damage {
 		b.CastPreviewUnits[id] = true
@@ -449,6 +462,42 @@ func (b *BattleState) refreshCastPreview() {
 	for _, mv := range result.UnitsMoved {
 		b.CastPreviewUnits[mv.UnitID] = true
 	}
+}
+
+func impactPositions(impacts []resolve.Impact) []hex.Hex {
+	if len(impacts) == 0 {
+		return nil
+	}
+	out := make([]hex.Hex, len(impacts))
+	for i, im := range impacts {
+		out[i] = im.Pos
+	}
+	return out
+}
+
+// hitFlashHexes collects hexes where a hit flash should play: impact
+// positions (unit hits) plus field hexes (area effect). Deduplicated.
+func hitFlashHexes(result resolve.LinkResult) []hex.Hex {
+	if len(result.Impacts) == 0 && len(result.Field) == 0 {
+		return nil
+	}
+	seen := make(map[hex.Hex]bool, len(result.Impacts)+len(result.Field))
+	out := make([]hex.Hex, 0, len(result.Impacts)+len(result.Field))
+	for _, im := range result.Impacts {
+		if seen[im.Pos] {
+			continue
+		}
+		seen[im.Pos] = true
+		out = append(out, im.Pos)
+	}
+	for _, h := range result.Field {
+		if seen[h] {
+			continue
+		}
+		seen[h] = true
+		out = append(out, h)
+	}
+	return out
 }
 
 // executeLinkAt runs the resolve pipeline and applies the result.
@@ -479,8 +528,9 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 	// Projectile plays first so the impact flash/pop that applyLinkResult
 	// enqueues fires right after the bolt arrives. Aim at the farthest
 	// affected hex so line spells follow the line instead of stopping at
-	// the clicked hex.
-	end := projectileEndpoint(b.Player.Pos, target, result.Hexes)
+	// the clicked hex. Prefer the projectile waypoints (true trajectory),
+	// fall back to impacts / field, then to the clicked hex.
+	end := projectileEndpoint(b.Player.Pos, target, result)
 	b.VFX.Push(NewProjectile(b.Player.Pos, end, colorProjectile))
 	b.applyLinkResult(result)
 
@@ -495,8 +545,9 @@ func (b *BattleState) executeLinkAt(target hex.Hex) {
 // Dead-check on heal / status / move is intentional: earlier damage
 // in the same result may have killed the unit.
 func (b *BattleState) applyLinkResult(result resolve.LinkResult) {
-	if len(result.Hexes) > 0 {
-		b.VFX.Push(NewHexFlash(result.Hexes, colorFlashHit))
+	flashHexes := hitFlashHexes(result)
+	if len(flashHexes) > 0 {
+		b.VFX.Push(NewHexFlash(flashHexes, colorFlashHit))
 	}
 
 	for unitID, dmg := range result.Damage {
@@ -610,9 +661,17 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	// 5. Chain target preview (affected hexes) + hover highlight
+	// 5. Chain target preview + hover highlight. The three preview
+	//    categories (impacts / field / waypoints) share one color today
+	//    but are kept separate so future VFX can distinguish them.
 	if b.Phase == PhaseChainTarget {
-		for _, h := range b.CastPreview {
+		for _, h := range b.PreviewWaypoints {
+			drawHexHighlight(screen, b.Grid, h, colorCastPreview)
+		}
+		for _, h := range b.PreviewField {
+			drawHexHighlight(screen, b.Grid, h, colorCastPreview)
+		}
+		for _, h := range b.PreviewImpacts {
 			drawHexHighlight(screen, b.Grid, h, colorCastPreview)
 		}
 		if b.HoverValid {
@@ -659,14 +718,23 @@ func (b *BattleState) Draw(screen *ebiten.Image) {
 	b.drawHUD(screen)
 }
 
-// projectileEndpoint picks where the bolt should land: the affected hex
+// projectileEndpoint picks where the bolt should land. Prefers a
+// projectile waypoint (the actual trajectory), falling back to impact /
+// field hexes, then to the clicked hex. Among candidates, picks the hex
 // farthest from the caster, tie-breaking by proximity to the clicked hex.
-// Falls back to clicked when hexes is empty.
-func projectileEndpoint(caster, clicked hex.Hex, hexes []hex.Hex) hex.Hex {
+func projectileEndpoint(caster, clicked hex.Hex, result resolve.LinkResult) hex.Hex {
+	candidates := result.Waypoints
+	if len(candidates) == 0 {
+		candidates = impactPositions(result.Impacts)
+	}
+	if len(candidates) == 0 {
+		candidates = result.Field
+	}
+
 	end := clicked
 	bestDist := -1
 	bestTieBreak := 0
-	for _, h := range hexes {
+	for _, h := range candidates {
 		d := caster.Distance(h)
 		if d < bestDist {
 			continue

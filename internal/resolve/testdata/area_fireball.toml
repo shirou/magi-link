@@ -1,0 +1,55 @@
+# area + fireball: area sets Origins = clicked; fireball explodes there
+# with its own radius. Both sets of Impacts accumulate (deduplicated).
+
+name        = "area + fireball explodes at clicked hex"
+description = "Area sets Origins to clicked; fireball detonates there"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 4]
+hp     = 100
+player = true
+
+# Enemy at the clicked hex.
+[[battlefield.units]]
+id   = 10
+name = "Center"
+pos  = [5, 4]
+hp   = 50
+
+# Enemy just outside the area r=1 but inside fireball's radius=1 from
+# clicked (i.e. within distance 1 of [5,4]).
+[[battlefield.units]]
+id   = 11
+name = "Ring"
+pos  = [6, 4]
+hp   = 50
+
+[input]
+caster  = [0, 4]
+clicked = [5, 4]
+
+[[input.spells]]
+id     = "area"
+type   = "target"
+shape  = "area"
+range  = 10
+radius = 1
+
+[[input.spells]]
+ref = "fireball"   # explode_radius = 1
+
+[expected]
+# Unit 10 (center) is caught by area AND by fireball explode — dedup = 1.
+# Unit 11 (neighbor) is caught by both as well — dedup = 1.
+impact_count     = 2
+contains_impacts = [10, 11]
+# Field: area adds 7 (r=1 disc). fireball explode around the same origin
+# adds the same 7. Union = 7.
+field_count    = 7
+waypoint_count = 0

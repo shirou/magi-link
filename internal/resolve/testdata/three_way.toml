@@ -1,0 +1,36 @@
+# 3way expands Origins into 3 adjacent hexes and records them as Waypoints.
+# Without a following targeting/action spell, no Impacts or Field are written.
+
+name        = "3way spreads origins and seeds waypoints"
+description = "The 3 offset hexes go into Waypoints for preview/VFX"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [5, 4]
+hp     = 100
+player = true
+
+[input]
+caster    = [5, 4]
+clicked   = [5, 4]
+direction = 0
+
+[[input.spells]]
+ref = "self"
+
+[[input.spells]]
+ref = "3way"
+
+[expected]
+# self adds caster to Impacts.
+impact_count     = 1
+contains_impacts = [1]
+field_count      = 0
+# 3way produces 3 offset hexes (dir-1, dir, dir+1). None coincides with
+# caster so all 3 enter Waypoints.
+waypoint_count = 3

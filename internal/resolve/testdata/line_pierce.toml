@@ -1,0 +1,56 @@
+# pierce + line walks its full range, hitting every unit on the path
+# and passing through walls.
+
+name        = "pierce + line hits all units on path"
+description = "With pierce, line bypasses walls and records every unit as Impact"
+
+[battlefield]
+grid_width  = 20
+grid_height = 6
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 0]
+hp     = 100
+player = true
+
+[[battlefield.units]]
+id   = 10
+name = "A"
+pos  = [2, 0]
+hp   = 30
+
+[[battlefield.units]]
+id   = 11
+name = "B"
+pos  = [4, 0]
+hp   = 30
+
+# Wall between the two enemies. Pierce should ignore it.
+[[battlefield.terrain]]
+pos  = [3, 0]
+type = "rock"
+
+[input]
+caster    = [0, 0]
+clicked   = [6, 0]
+direction = 0
+
+[[input.spells]]
+ref = "pierce"
+
+[[input.spells]]
+id       = "line"
+type     = "target"
+shape    = "line"
+range    = 5
+stacking = "full"
+
+[expected]
+impact_count     = 2
+contains_impacts = [10, 11]
+# Waypoints: all 5 hexes along the path, since pierce walks through both
+# walls and units (unlike non-pierce, which excludes hit-unit hexes).
+waypoint_count     = 5
+contains_waypoints = [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]

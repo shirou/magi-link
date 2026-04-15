@@ -1,0 +1,46 @@
+# bounce + line: wall reflects the line direction once. Non-pierce
+# walker stops at the first unit after bouncing.
+
+name        = "bounce makes line reflect off a wall"
+description = "Line walks forward, hits wall, reflects, continues"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [5, 4]
+hp     = 100
+player = true
+
+# Wall 2 steps ahead in dir 0 (cube +Q). The player is at cube(3,4),
+# so the wall is at cube(5,4) = offset [7, 4].
+[[battlefield.terrain]]
+pos  = [7, 4]
+type = "rock"
+
+[input]
+caster    = [5, 4]
+clicked   = [10, 4]
+direction = 0
+
+[[input.spells]]
+ref = "bounce"
+
+[[input.spells]]
+id       = "reflected"
+type     = "target"
+shape    = "line"
+range    = 5
+stacking = "full"
+
+[expected]
+# No units on the path, so no Impacts. The walk advances 1 hex, hits the
+# wall, reflects (dir+3), then walks backward through caster and beyond.
+# Exact waypoint count depends on the reflection math, but at minimum
+# we expect the forward step plus several backward steps.
+impact_count       = 0
+field_count        = 0
+waypoint_count_min = 3
