@@ -49,7 +49,7 @@ func stepSelf(state LinkState, s *spell.SpellDef, input LinkInput, bf Battlefiel
 	if degraded(s, count) {
 		return state
 	}
-	state.Origins = []hex.Hex{input.CasterPos}
+	state = setOrigins(state, input.CasterPos)
 	if u := bf.UnitAt(input.CasterPos); u.IsAlive() {
 		state = addImpact(state, u.ID, input.CasterPos)
 	}
@@ -66,7 +66,7 @@ func stepSingle(state LinkState, s *spell.SpellDef, input LinkInput, bf Battlefi
 	if !bf.GridBounds().InBounds(input.ClickedHex) {
 		return state
 	}
-	state.Origins = []hex.Hex{input.ClickedHex}
+	state = setOrigins(state, input.ClickedHex)
 	if u := bf.UnitAt(input.ClickedHex); u.IsAlive() {
 		state = addImpact(state, u.ID, input.ClickedHex)
 	}
@@ -100,7 +100,7 @@ func stepLine(state LinkState, s *spell.SpellDef, input LinkInput, bf Battlefiel
 		newOrigins = append(newOrigins, endPos)
 	}
 	if len(newOrigins) > 0 {
-		state.Origins = dedupHexes(newOrigins)
+		state = setOrigins(state, dedupHexes(newOrigins)...)
 	}
 
 	state.Flags &^= flagPierce
@@ -143,7 +143,7 @@ func fillAreaFromClicked(state LinkState, s *spell.SpellDef, input LinkInput, bf
 	if !grid.InBounds(input.ClickedHex) {
 		return state
 	}
-	state.Origins = []hex.Hex{input.ClickedHex}
+	state = setOrigins(state, input.ClickedHex)
 	for _, h := range hexes {
 		if !grid.InBounds(h) {
 			continue
@@ -169,7 +169,7 @@ func stepWeakest(state LinkState, bf Battlefield, count int) LinkState {
 	if weakest == nil {
 		return state
 	}
-	state.Origins = []hex.Hex{weakest.Pos}
+	state = setOrigins(state, weakest.Pos)
 	return addImpact(state, weakest.ID, weakest.Pos)
 }
 
@@ -184,7 +184,7 @@ func stepAlly(state LinkState, s *spell.SpellDef, input LinkInput, bf Battlefiel
 	if !u.IsAlive() || !u.IsPlayer {
 		return state
 	}
-	state.Origins = []hex.Hex{input.ClickedHex}
+	state = setOrigins(state, input.ClickedHex)
 	state = addImpact(state, u.ID, input.ClickedHex)
 	return state
 }
@@ -224,7 +224,7 @@ func step3Way(state LinkState, input LinkInput) LinkState {
 			state = addWaypoint(state, h)
 		}
 	}
-	state.Origins = dedupHexes(expanded)
+	state = setOrigins(state, dedupHexes(expanded)...)
 	return state
 }
 
@@ -242,7 +242,7 @@ func stepHoming(state LinkState, bf Battlefield) LinkState {
 		state = addImpact(state, nearest.ID, nearest.Pos)
 	}
 	if len(newOrigins) > 0 {
-		state.Origins = dedupHexes(newOrigins)
+		state = setOrigins(state, dedupHexes(newOrigins)...)
 	}
 	return state
 }

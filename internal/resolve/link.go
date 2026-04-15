@@ -76,12 +76,18 @@ const (
 //   - Impacts   : units that receive damage / heal / status / movement
 //   - Field     : area hexes the spell covers (terrain changes + VFX derivation)
 //   - Waypoints : hexes a projectile passes through (VFX only)
+//
+// originsSet tracks whether any spell has explicitly moved Origins away
+// from the default [caster]. This lets explode-style actions fall back
+// to ClickedHex when no target spell has refined the aim yet.
 type LinkState struct {
 	Origins   []hex.Hex
 	Impacts   []Impact
 	Field     []hex.Hex
 	Waypoints []hex.Hex
 	Flags     stepFlag
+
+	originsSet bool
 }
 
 // ExecuteLink runs a link and returns its side-effect-free result.
@@ -127,12 +133,21 @@ func seedInitialState(state LinkState, input LinkInput, bf Battlefield) LinkStat
 		state = addImpact(state, u.ID, input.ClickedHex)
 	}
 	if !slices.ContainsFunc(input.Spells, (*spell.SpellDef).IsTarget) {
-		state.Origins = []hex.Hex{input.ClickedHex}
+		state = setOrigins(state, input.ClickedHex)
 	}
 	return state
 }
 
 // --- State mutation helpers ---
+
+// setOrigins replaces Origins with the given hexes and flags them as
+// explicitly set. Use this whenever a spell step aims the chain
+// somewhere — explodes and line launches both rely on originsSet.
+func setOrigins(state LinkState, hexes ...hex.Hex) LinkState {
+	state.Origins = hexes
+	state.originsSet = true
+	return state
+}
 
 func addImpact(state LinkState, unitID int, pos hex.Hex) LinkState {
 	for _, im := range state.Impacts {

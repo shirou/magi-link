@@ -329,6 +329,73 @@ func TestPierceFlagBypassesWall(t *testing.T) {
 	}
 }
 
+// After a non-explode action, Origins should point at the unit the
+// action hit, so a following 3way (etc.) fans out from that hit — not
+// from the caster. Regression: `ice → 3way` used to 3-way around the
+// caster because Origins stayed at the default [caster].
+func TestActionAdvancesOriginsToImpact(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	target := hex.NewHex(4, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos:  caster,
+		ClickedHex: target,
+		Direction:  0,
+		Spells: []*spell.SpellDef{
+			{ID: "ice", Type: "action", Damage: 2},
+			{ID: "3way", Type: "target", Shape: spell.Shape3Way},
+		},
+	}, bf)
+
+	// 3way should have seeded Waypoints at the 3 hexes adjacent to the
+	// ice-hit target, NOT around the caster.
+	set := hexSet(result.Waypoints)
+	for _, expected := range []hex.Hex{
+		target.Direction(0), target.Direction(5), target.Direction(1),
+	} {
+		if !set[expected] {
+			t.Errorf("3way after action: expected waypoint %v near target, got %v", expected, result.Waypoints)
+		}
+	}
+	for _, notExpected := range caster.Neighbors() {
+		if set[notExpected] {
+			t.Errorf("3way after action: unexpected waypoint %v near caster", notExpected)
+		}
+	}
+}
+
+// A chain of an explode action followed by a targeting spell must fire
+// the explode at the clicked hex, not at the caster's feet. Regression:
+// `fireball + single` used to self-damage because the fireball fell back
+// to Origins = [caster] when no prior target spell had moved Origins.
+func TestExplodeWithFollowingTargetDoesNotHitCaster(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(5, 0)
+	player := entity.NewUnit(1, "Player", caster, 100, 0)
+	player.IsPlayer = true
+	enemy := entity.NewUnit(10, "E", clicked, 30, 0)
+	bf.units = []*entity.Unit{player, enemy}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos:  caster,
+		ClickedHex: clicked,
+		Spells: []*spell.SpellDef{
+			{ID: "fireball", Type: "action", Damage: 5, ExplodeRadius: 1},
+			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 10},
+		},
+	}, bf)
+
+	if _, hit := result.Damage[player.ID]; hit {
+		t.Errorf("caster must not take damage from fireball aimed at clicked hex, got %v", result.Damage)
+	}
+	if result.Damage[enemy.ID] != 5 {
+		t.Errorf("enemy should take fireball damage, got %v", result.Damage)
+	}
+}
+
 func TestHomingSelectsNearestEnemy(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
