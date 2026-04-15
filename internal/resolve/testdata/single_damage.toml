@@ -1,0 +1,41 @@
+# single on a unit hex adds only that unit to Impacts.
+# Field stays empty (single is not an area shape).
+
+name        = "single points at clicked unit"
+description = "single + damage hits exactly the clicked enemy"
+
+[battlefield]
+grid_width  = 12
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 0]
+hp     = 100
+player = true
+
+[[battlefield.units]]
+id     = 10
+name   = "Enemy"
+pos    = [3, 0]
+hp     = 30
+
+[input]
+caster  = [0, 0]
+clicked = [3, 0]
+
+[[input.spells]]
+ref = "single"
+
+[[input.spells]]
+id     = "dmg"
+type   = "action"
+damage = 5
+
+[expected]
+impact_count     = 1
+contains_impacts = [10]
+excludes_impacts = [1]
+field_count      = 0
+waypoint_count   = 0

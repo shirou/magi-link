@@ -1,21 +1,31 @@
 package resolve
 
 import (
+	"slices"
+
 	"github.com/shirou/magi_link/internal/entity"
 	"github.com/shirou/magi_link/internal/hex"
 	"github.com/shirou/magi_link/internal/spell"
 	"github.com/shirou/magi_link/internal/terrain"
 )
 
-// LinkInput is what the game provides when the player confirms a target.
+// LinkInput is what the game provides when the player confirms a cast.
 type LinkInput struct {
 	CasterPos  hex.Hex
-	ClickedHex hex.Hex           // the hex the player clicked
-	Direction  int               // 0-5, hex direction derived from click angle
-	Spells     []*spell.SpellDef // the full link's spell list
+	ClickedHex hex.Hex
+	Direction  int // 0-5, hex direction derived from click angle
+	Spells     []*spell.SpellDef
 }
 
-// StatusChange describes a status effect to apply or remove on a unit.
+// Impact is a unit-level target: something that will receive damage, heal,
+// status, or movement from an action spell. Purely unit-based; a hex with
+// no unit is never an Impact.
+type Impact struct {
+	UnitID int
+	Pos    hex.Hex
+}
+
+// StatusChange describes a status effect applied to / removed from a unit.
 type StatusChange struct {
 	UnitID int
 	Status entity.StatusEffect
@@ -35,12 +45,12 @@ type UnitMove struct {
 	To     hex.Hex
 }
 
-// LinkResult holds the outcome of executing a full spell link.
-// The resolve package never mutates game state directly; the game
-// applies results with animations/logging as needed.
+// LinkResult is the side-effect-free output of a link cast.
+// The game applies it over time with animations.
 type LinkResult struct {
-	Targets []spell.Target
-	Hexes   []hex.Hex
+	Impacts   []Impact  // units affected by damage / heal / status / movement
+	Field     []hex.Hex // hexes that form the spell's area (terrain + VFX derivation)
+	Waypoints []hex.Hex // hexes traversed by projectiles (VFX only, no effect)
 
 	Damage         map[int]int
 	Healing        map[int]int
@@ -50,8 +60,8 @@ type LinkResult struct {
 	UnitsMoved     []UnitMove
 }
 
-// stepFlag is a transient modifier applied to the next action step.
-// Flags are consumed (cleared) after the next action-type shape runs.
+// stepFlag is a transient modifier set by modifier spells (pierce, bounce)
+// and consumed by the next line-type spell.
 type stepFlag uint
 
 const (
@@ -59,43 +69,108 @@ const (
 	flagBounce
 )
 
-// LinkState is the running state of a link execution.
-// Each spell step reads and returns a transformed LinkState
-// (bucket-relay model).
+// LinkState is the running state threaded through every step of a link.
+// The four hex/unit sets carry distinct semantics:
+//
+//   - Origins   : next step's launch point (projectile / explosion center)
+//   - Impacts   : units that receive damage / heal / status / movement
+//   - Field     : area hexes the spell covers (terrain changes + VFX derivation)
+//   - Waypoints : hexes a projectile passes through (VFX only)
+//
+// originsSet tracks whether any spell has explicitly moved Origins away
+// from the default [caster]. This lets explode-style actions fall back
+// to ClickedHex when no target spell has refined the aim yet.
 type LinkState struct {
-	Origins []hex.Hex      // current "casting points" for the next action/modifier
-	Targets []spell.Target // accumulated hit targets (never removed)
-	Hexes   []hex.Hex      // all affected hexes (for VFX/rendering)
-	Flags   stepFlag       // transient modifier flags consumed by next action
+	Origins   []hex.Hex
+	Impacts   []Impact
+	Field     []hex.Hex
+	Waypoints []hex.Hex
+	Flags     stepFlag
+
+	originsSet bool
 }
 
-// ExecuteLink runs the full link pipeline and returns the result.
-// Target-type spells transform the running LinkState (Phase 1);
-// action-type spells consume the current Targets and write diffs
-// into the result (Phase 2). The two phases are interleaved in chain
-// order so chains like `single → fireball → line → fireball` work
-// correctly: the second fireball fires against targets accumulated
-// by both the `single` and `line` steps.
+// ExecuteLink runs a link and returns its side-effect-free result.
 func ExecuteLink(input LinkInput, bf Battlefield) LinkResult {
 	state := LinkState{Origins: []hex.Hex{input.CasterPos}}
-	result := LinkResult{
-		Damage:  make(map[int]int),
-		Healing: make(map[int]int),
-	}
+	state = seedInitialState(state, input, bf)
+
+	// Damage/Healing maps are lazily allocated the first time an action
+	// spell touches a unit; target-only chains (e.g. cast previews) skip
+	// the allocation entirely.
+	result := LinkResult{}
 
 	shapeCounts := make(map[spell.TargetShape]int)
-
 	for _, s := range input.Spells {
 		switch {
 		case s.IsTarget():
 			shapeCounts[s.Shape]++
 			state = applyStep(state, s, input, bf, shapeCounts[s.Shape])
 		case s.IsAction():
-			state = applyAction(state, s, input.CasterPos, bf, &result)
+			state = applyAction(state, s, input, bf, &result)
 		}
 	}
 
-	result.Targets = state.Targets
-	result.Hexes = state.Hexes
+	result.Impacts = state.Impacts
+	result.Field = state.Field
+	result.Waypoints = state.Waypoints
 	return result
+}
+
+// seedInitialState picks up any unit at the clicked hex as the initial
+// Impact (Spellmasons-style auto-target). For action-only chains (no
+// target spell present) it also moves Origins to the clicked hex so
+// explode-style actions fire at the click, not at the caster's feet.
+//
+// Target spells are responsible for their own Origins semantics: line
+// walks from the current Origins (= caster by default), area recenters
+// Origins to clicked, etc.
+func seedInitialState(state LinkState, input LinkInput, bf Battlefield) LinkState {
+	if !bf.GridBounds().InBounds(input.ClickedHex) {
+		return state
+	}
+	if u := bf.UnitAt(input.ClickedHex); u.IsAlive() {
+		state = addImpact(state, u.ID, input.ClickedHex)
+	}
+	if !slices.ContainsFunc(input.Spells, (*spell.SpellDef).IsTarget) {
+		state = setOrigins(state, input.ClickedHex)
+	}
+	return state
+}
+
+// --- State mutation helpers ---
+
+// setOrigins replaces Origins with the given hexes and flags them as
+// explicitly set. Use this whenever a spell step aims the chain
+// somewhere — explodes and line launches both rely on originsSet.
+func setOrigins(state LinkState, hexes ...hex.Hex) LinkState {
+	state.Origins = hexes
+	state.originsSet = true
+	return state
+}
+
+func addImpact(state LinkState, unitID int, pos hex.Hex) LinkState {
+	for _, im := range state.Impacts {
+		if im.UnitID == unitID {
+			return state
+		}
+	}
+	state.Impacts = append(state.Impacts, Impact{UnitID: unitID, Pos: pos})
+	return state
+}
+
+func addField(state LinkState, h hex.Hex) LinkState {
+	if slices.Contains(state.Field, h) {
+		return state
+	}
+	state.Field = append(state.Field, h)
+	return state
+}
+
+func addWaypoint(state LinkState, h hex.Hex) LinkState {
+	if slices.Contains(state.Waypoints, h) {
+		return state
+	}
+	state.Waypoints = append(state.Waypoints, h)
+	return state
 }

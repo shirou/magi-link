@@ -26,6 +26,10 @@ type Unit struct {
 	MaxMana  int
 	MoveRange int
 
+	// MeleeDamage is dealt when the unit's enemy-turn melee action lands.
+	// Unused (0) for the player.
+	MeleeDamage int
+
 	Statuses map[StatusEffect]int // status -> remaining turns
 
 	IsPlayer bool

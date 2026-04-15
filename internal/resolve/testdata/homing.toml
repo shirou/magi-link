@@ -1,6 +1,7 @@
-# homing snaps origins to the nearest living enemy.
+# homing snaps Origins to the nearest living enemy and adds that enemy
+# as an Impact.
 
-name        = "homing snaps origin to nearest enemy"
+name        = "homing picks nearest enemy as origin + impact"
 description = "A far and near enemy exist; homing selects the near one"
 
 [battlefield]
@@ -15,29 +16,29 @@ hp     = 100
 player = true
 
 [[battlefield.units]]
-id     = 10
-name   = "Near"
-pos    = [3, 0]
-hp     = 30
-player = false
+id   = 10
+name = "Near"
+pos  = [3, 0]
+hp   = 30
 
 [[battlefield.units]]
-id     = 11
-name   = "Far"
-pos    = [15, 0]
-hp     = 30
-player = false
+id   = 11
+name = "Far"
+pos  = [15, 0]
+hp   = 30
 
 [input]
+# Clicked on an empty hex so seedInitialState doesn't pre-impact a unit.
 caster    = [0, 0]
-clicked   = [0, 0]
+clicked   = [1, 0]
 direction = 0
 
 [[input.spells]]
 ref = "homing"
 
 [expected]
-hex_count      = 1
-target_count   = 1
-contains_units = [10]
-excludes_units = [11]
+impact_count     = 1
+contains_impacts = [10]
+excludes_impacts = [11]
+field_count      = 0
+waypoint_count   = 0

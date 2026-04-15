@@ -1,0 +1,59 @@
+# area + damage: Field gets the radius disc; units inside become Impacts.
+
+name        = "area collects hexes into Field and units into Impacts"
+description = "area r=1 around clicked; Origins moves to clicked"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 4]
+hp     = 100
+player = true
+
+# Two enemies inside the r=1 disc centered at clicked [5, 4].
+[[battlefield.units]]
+id   = 10
+name = "A"
+pos  = [5, 4]   # center
+hp   = 30
+
+[[battlefield.units]]
+id   = 11
+name = "B"
+pos  = [6, 4]   # neighbor of (5,4)
+hp   = 30
+
+# Enemy outside the disc.
+[[battlefield.units]]
+id   = 12
+name = "Far"
+pos  = [8, 4]
+hp   = 30
+
+[input]
+caster  = [0, 4]
+clicked = [5, 4]
+
+[[input.spells]]
+id    = "area"
+type  = "target"
+shape = "area"
+range = 10
+radius = 1
+
+[[input.spells]]
+id     = "dmg"
+type   = "action"
+damage = 5
+
+[expected]
+impact_count     = 2
+contains_impacts = [10, 11]
+excludes_impacts = [12]
+field_count    = 7         # r=1 disc
+contains_field = [[5, 4]]
+waypoint_count = 0

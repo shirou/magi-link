@@ -332,4 +332,4 @@ type           = "action"
 cost_type      = "exponential"
 base_cost      = 3
 terrain_create = "generated_wall"
-clear_targets  = true
+clear_state    = true

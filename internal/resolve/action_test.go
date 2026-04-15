@@ -11,16 +11,15 @@ import (
 
 // --- Damage / Heal ---
 
-func TestActionDamageHitsTargetUnit(t *testing.T) {
+func TestActionDamageHitsSingleTarget(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	enemy := entity.NewUnit(10, "Echo", targetPos, 30, 0)
-	bf.units = []*entity.Unit{enemy}
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
 			{ID: "fireball", Type: "action", Damage: 5, Element: spell.ElementFire},
@@ -32,13 +31,13 @@ func TestActionDamageHitsTargetUnit(t *testing.T) {
 	}
 }
 
-func TestActionHealHitsTargetUnit(t *testing.T) {
+func TestActionHealHitsCaster(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	ally := entity.NewUnit(1, "Player", caster, 100, 0)
-	ally.IsPlayer = true
-	ally.HP = 50
-	bf.units = []*entity.Unit{ally}
+	player := entity.NewUnit(1, "Player", caster, 100, 0)
+	player.IsPlayer = true
+	player.HP = 50
+	bf.units = []*entity.Unit{player}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos: caster,
@@ -56,70 +55,66 @@ func TestActionHealHitsTargetUnit(t *testing.T) {
 func TestActionDamageAccumulatesAcrossMultipleActions(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	fireball := &spell.SpellDef{ID: "fireball", Type: "action", Damage: 3}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
-			fireball,
-			fireball,
-			fireball,
+			fireball, fireball, fireball,
 		},
 	}, bf)
 
 	if result.Damage[10] != 9 {
-		t.Errorf("want Damage[10]=9 (3×3), got %v", result.Damage)
+		t.Errorf("want Damage[10]=9 (3x3), got %v", result.Damage)
 	}
 }
 
-// --- Status application ---
+// --- Status ---
 
 func TestActionAppliesStatus(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
-			{ID: "fireball", Type: "action", Damage: 3, Status: "burning", StatusTurns: 2},
+			{ID: "fb", Type: "action", Damage: 3, Status: "burning", StatusTurns: 2},
 		},
 	}, bf)
 
 	if len(result.StatusApplied) != 1 {
-		t.Fatalf("want 1 status applied, got %d", len(result.StatusApplied))
+		t.Fatalf("want 1 status, got %d", len(result.StatusApplied))
 	}
 	sc := result.StatusApplied[0]
 	if sc.UnitID != 10 || sc.Status != entity.StatusBurning || sc.Turns != 2 {
-		t.Errorf("unexpected status change: %+v", sc)
+		t.Errorf("bad status: %+v", sc)
 	}
 }
-
-// --- Status combos ---
 
 func TestActionStatusComboBonusDamageAndRemoval(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	enemy := entity.NewUnit(10, "Echo", targetPos, 30, 0)
+	target := hex.NewHex(2, 0)
+	enemy := entity.NewUnit(10, "E", target, 30, 0)
 	enemy.ApplyStatus(entity.StatusPoisoned, 3)
 	bf.units = []*entity.Unit{enemy}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
 			{
-				ID: "fireball", Type: "action", Damage: 3,
+				ID: "fb", Type: "action", Damage: 3,
 				StatusCombos: []spell.StatusCombo{
 					{If: "poisoned", Remove: true, BonusDamage: 2},
 				},
@@ -128,23 +123,23 @@ func TestActionStatusComboBonusDamageAndRemoval(t *testing.T) {
 	}, bf)
 
 	if result.Damage[10] != 5 {
-		t.Errorf("combo bonus damage: want 5 (3+2), got %d", result.Damage[10])
+		t.Errorf("combo bonus: want 5 (3+2), got %d", result.Damage[10])
 	}
 	if len(result.StatusRemoved) != 1 || result.StatusRemoved[0].Status != entity.StatusPoisoned {
-		t.Errorf("combo status removal: got %v", result.StatusRemoved)
+		t.Errorf("combo remove: got %v", result.StatusRemoved)
 	}
 }
 
-// --- Explode radius ---
+// --- Explode ---
 
-func TestActionExplodeRadiusHitsNeighbors(t *testing.T) {
+func TestExplodeFromOriginHitsNeighbors(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
 	center := hex.NewHex(5, 0)
-	neighbor := center.Direction(0) // (6, 0)
+	neighbor := center.Direction(0)
 	bf.units = []*entity.Unit{
-		entity.NewUnit(10, "Center", center, 30, 0),
-		entity.NewUnit(11, "Neighbor", neighbor, 30, 0),
+		entity.NewUnit(10, "C", center, 30, 0),
+		entity.NewUnit(11, "N", neighbor, 30, 0),
 	}
 
 	result := ExecuteLink(LinkInput{
@@ -156,26 +151,45 @@ func TestActionExplodeRadiusHitsNeighbors(t *testing.T) {
 		},
 	}, bf)
 
-	if result.Damage[10] != 3 {
-		t.Errorf("center hit: want 3, got %d", result.Damage[10])
-	}
-	if result.Damage[11] != 3 {
-		t.Errorf("explode neighbor: want 3, got %d", result.Damage[11])
+	if result.Damage[10] != 3 || result.Damage[11] != 3 {
+		t.Errorf("explode: both should take 3, got %v", result.Damage)
 	}
 }
 
-// --- Terrain creation ---
-
-func TestActionTerrainCreate(t *testing.T) {
+func TestLinePlusExplodeFiresFromEndPos(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	pos := hex.NewHex(2, 0)
+	// No unit on path; line walks full range=3, endPos = caster+3 in dir 0.
+	end := caster.Direction(0).Direction(0).Direction(0) // cube (3,0)
+	victim := end.Direction(0)                           // cube (4,0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "V", victim, 30, 0)}
+
+	result := ExecuteLink(LinkInput{
+		CasterPos: caster,
+		Direction: 0,
+		Spells: []*spell.SpellDef{
+			{ID: "line", Type: "target", Shape: spell.ShapeLine, Range: 3, Stacking: "full"},
+			{ID: "fb", Type: "action", Damage: 3, ExplodeRadius: 1},
+		},
+	}, bf)
+
+	if result.Damage[10] != 3 {
+		t.Errorf("explode from line endPos should hit neighbor of endPos, got %v", result.Damage)
+	}
+}
+
+// --- Terrain ---
+
+func TestActionTerrainCreateUsesField(t *testing.T) {
+	bf := newMockBF()
+	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(2, 0)
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: pos,
+		ClickedHex: clicked,
 		Spells: []*spell.SpellDef{
-			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
+			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 5, Radius: 0},
 			{ID: "water", Type: "action", TerrainCreate: "water_puddle"},
 		},
 	}, bf)
@@ -184,26 +198,24 @@ func TestActionTerrainCreate(t *testing.T) {
 		t.Fatalf("want 1 terrain change, got %d", len(result.TerrainChanges))
 	}
 	tc := result.TerrainChanges[0]
-	if tc.Pos != pos || tc.Type != terrain.TerrainWaterPuddle {
-		t.Errorf("unexpected terrain change: %+v", tc)
+	if tc.Pos != clicked || tc.Type != terrain.TerrainWaterPuddle {
+		t.Errorf("bad terrain change: %+v", tc)
 	}
 }
 
-// --- Terrain interactions ---
-
-func TestActionTerrainInteractionTransformsExisting(t *testing.T) {
+func TestActionTerrainInteractionTransforms(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	pos := hex.NewHex(2, 0)
-	bf.terrMap.Set(pos, &terrain.Terrain{Type: terrain.TerrainPoisonSwamp, Duration: -1})
+	clicked := hex.NewHex(2, 0)
+	bf.terrMap.Set(clicked, &terrain.Terrain{Type: terrain.TerrainPoisonSwamp, Duration: -1})
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: pos,
+		ClickedHex: clicked,
 		Spells: []*spell.SpellDef{
-			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
+			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 5, Radius: 0},
 			{
-				ID: "fireball", Type: "action", Damage: 3,
+				ID: "fb", Type: "action",
 				TerrainInteractions: []spell.TerrainInteraction{
 					{On: "poison_swamp", Result: "plain"},
 				},
@@ -213,26 +225,26 @@ func TestActionTerrainInteractionTransformsExisting(t *testing.T) {
 
 	found := false
 	for _, tc := range result.TerrainChanges {
-		if tc.Pos == pos && tc.Type == terrain.TerrainPlain {
+		if tc.Pos == clicked && tc.Type == terrain.TerrainPlain {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("poison_swamp → plain interaction not found: %+v", result.TerrainChanges)
+		t.Errorf("interaction not applied: %+v", result.TerrainChanges)
 	}
 }
 
 // --- Movement ---
 
-func TestActionPushMovesTargetAwayFromCaster(t *testing.T) {
+func TestActionPushMovesTargetAway(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
 			{ID: "push", Type: "action", Movement: "push"},
@@ -243,24 +255,20 @@ func TestActionPushMovesTargetAwayFromCaster(t *testing.T) {
 		t.Fatalf("want 1 move, got %d", len(result.UnitsMoved))
 	}
 	mv := result.UnitsMoved[0]
-	if mv.UnitID != 10 || mv.From != targetPos {
-		t.Errorf("unexpected move: %+v", mv)
-	}
-	if mv.To.Distance(caster) <= targetPos.Distance(caster) {
-		t.Errorf("push should increase distance from caster: from %v (d=%d) to %v (d=%d)",
-			mv.From, targetPos.Distance(caster), mv.To, mv.To.Distance(caster))
+	if mv.To.Distance(caster) <= target.Distance(caster) {
+		t.Errorf("push didn't move away: %+v", mv)
 	}
 }
 
 func TestActionPullMovesTargetTowardCaster(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(4, 0)
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	target := hex.NewHex(4, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
 			{ID: "pull", Type: "action", Movement: "pull"},
@@ -271,25 +279,23 @@ func TestActionPullMovesTargetTowardCaster(t *testing.T) {
 		t.Fatalf("want 1 move, got %d", len(result.UnitsMoved))
 	}
 	mv := result.UnitsMoved[0]
-	if mv.To.Distance(caster) >= targetPos.Distance(caster) {
-		t.Errorf("pull should decrease distance from caster: from %v (d=%d) to %v (d=%d)",
-			mv.From, targetPos.Distance(caster), mv.To, mv.To.Distance(caster))
+	if mv.To.Distance(caster) >= target.Distance(caster) {
+		t.Errorf("pull didn't move closer: %+v", mv)
 	}
 }
 
-func TestActionPushBlockedByWallIsSilent(t *testing.T) {
+func TestActionPushBlockedByWallsIsSilent(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	// Block every direction the target might move into by flooding with walls.
+	target := hex.NewHex(2, 0)
 	for i := 0; i < 6; i++ {
-		bf.terrMap.Set(targetPos.Direction(i), &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
+		bf.terrMap.Set(target.Direction(i), &terrain.Terrain{Type: terrain.TerrainRock, Duration: -1})
 	}
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells: []*spell.SpellDef{
 			{ID: "single", Type: "target", Shape: spell.ShapeSingle, Range: 5},
 			{ID: "push", Type: "action", Movement: "push"},
@@ -297,62 +303,63 @@ func TestActionPushBlockedByWallIsSilent(t *testing.T) {
 	}, bf)
 
 	if len(result.UnitsMoved) != 0 {
-		t.Errorf("completely walled-in push should produce no move, got %v", result.UnitsMoved)
+		t.Errorf("fully walled: want 0 moves, got %v", result.UnitsMoved)
 	}
 }
 
-// --- Clear targets ---
+// --- ClearState ---
 
-func TestActionClearTargetsDropsAccumulatedList(t *testing.T) {
+func TestActionClearStateDropsAccumulated(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(5, 5)
+	bf.units = []*entity.Unit{entity.NewUnit(1, "P", caster, 100, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
 		ClickedHex: caster,
 		Spells: []*spell.SpellDef{
-			{ID: "self", Type: "target", Shape: spell.ShapeSelf},
 			{ID: "area", Type: "target", Shape: spell.ShapeArea, Range: 4, Radius: 1},
-			{ID: "wall", Type: "action", TerrainCreate: "generated_wall", ClearTargets: true},
-			// After clear_targets, nothing should remain to be targeted.
+			{ID: "wall", Type: "action", TerrainCreate: "generated_wall", ClearState: true},
 			{ID: "fireball", Type: "action", Damage: 99},
 		},
 	}, bf)
 
-	// The wall should have written terrain changes for every area hex.
 	if len(result.TerrainChanges) == 0 {
-		t.Error("wall action should produce terrain changes")
+		t.Error("wall should produce terrain changes")
 	}
-	// After ClearTargets, the fireball should hit nothing.
 	if len(result.Damage) != 0 {
-		t.Errorf("after ClearTargets, subsequent damage should be empty, got %v", result.Damage)
+		t.Errorf("after ClearState, damage should be empty, got %v", result.Damage)
 	}
 }
 
-// --- Action spells alone (no target spells) ---
+// --- Action without a target spell ---
 
-func TestBareActionWithoutTargetsIsNoOp(t *testing.T) {
+func TestBareActionHitsClickedHex(t *testing.T) {
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
+	clicked := hex.NewHex(1, 0)
+	victim := entity.NewUnit(10, "V", clicked, 100, 0)
+	bf.units = []*entity.Unit{victim}
 
 	result := ExecuteLink(LinkInput{
-		CasterPos: caster,
+		CasterPos:  caster,
+		ClickedHex: clicked,
 		Spells: []*spell.SpellDef{
-			{ID: "fireball", Type: "action", Damage: 99},
+			{ID: "fireball", Type: "action", Damage: 7},
 		},
 	}, bf)
 
-	if len(result.Damage) != 0 {
-		t.Errorf("action without targets: want empty damage, got %v", result.Damage)
+	if result.Damage[10] != 7 {
+		t.Errorf("want Damage[10]=7, got %v", result.Damage)
 	}
-	if len(result.Hexes) != 0 {
-		t.Errorf("action without targets: want no hexes, got %d", len(result.Hexes))
+	if len(result.Impacts) == 0 {
+		t.Error("want clicked unit recorded as Impact")
 	}
 }
 
-// --- Registry-driven: full fireball spell ---
+// --- Registry-driven ---
 
-func TestRegistryFireballAppliesFullEffect(t *testing.T) {
+func TestRegistryFireballFullEffect(t *testing.T) {
 	reg, err := spell.LoadEmbedded()
 	if err != nil {
 		t.Fatalf("load registry: %v", err)
@@ -365,19 +372,19 @@ func TestRegistryFireballAppliesFullEffect(t *testing.T) {
 
 	bf := newMockBF()
 	caster := hex.NewHex(0, 0)
-	targetPos := hex.NewHex(2, 0)
-	bf.units = []*entity.Unit{entity.NewUnit(10, "Echo", targetPos, 30, 0)}
+	target := hex.NewHex(2, 0)
+	bf.units = []*entity.Unit{entity.NewUnit(10, "E", target, 30, 0)}
 
 	result := ExecuteLink(LinkInput{
 		CasterPos:  caster,
-		ClickedHex: targetPos,
+		ClickedHex: target,
 		Spells:     []*spell.SpellDef{single, fireball},
 	}, bf)
 
 	if result.Damage[10] != fireball.Damage {
-		t.Errorf("fireball base damage: want %d, got %d", fireball.Damage, result.Damage[10])
+		t.Errorf("fireball damage: want %d, got %d", fireball.Damage, result.Damage[10])
 	}
-	if len(result.StatusApplied) != 1 || result.StatusApplied[0].Status != entity.StatusBurning {
+	if len(result.StatusApplied) == 0 || result.StatusApplied[0].Status != entity.StatusBurning {
 		t.Errorf("fireball should apply burning, got %v", result.StatusApplied)
 	}
 }

@@ -1,0 +1,58 @@
+# line + fireball: line hits the first enemy, then fireball explodes
+# at the line's endPos (= the hit hex). Explosion adds a radius to
+# Field + any units inside to Impacts.
+
+name        = "line + fireball: hit + explode at impact"
+description = "The line's endPos becomes the fireball's explosion center"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [0, 4]
+hp     = 100
+player = true
+
+# First enemy on the line's path. Line stops here.
+[[battlefield.units]]
+id   = 10
+name = "Hit"
+pos  = [3, 4]
+hp   = 50
+
+# Enemy one hex below the hit (neighbor of [3,4]). Within fireball
+# radius=1, so the explosion should catch them.
+[[battlefield.units]]
+id   = 11
+name = "Neighbor"
+pos  = [3, 5]
+hp   = 50
+
+[input]
+caster    = [0, 4]
+clicked   = [8, 4]
+direction = 0
+
+[[input.spells]]
+id       = "line"
+type     = "target"
+shape    = "line"
+range    = 5
+stacking = "full"
+
+[[input.spells]]
+ref = "fireball"   # explode_radius = 1
+
+[expected]
+# Both enemies hit: 10 by line, then 10 and 11 by the radius=1 explode.
+# Deduplication keeps them at one Impact each.
+impact_count     = 2
+contains_impacts = [10, 11]
+# Field: 7 hexes of the radius=1 disc centered at the hit hex [3, 4].
+field_count = 7
+# Waypoints: the 3 path hexes before the hit ([1,4], [2,4]); [3,4] is
+# the landing hex, not a waypoint.
+waypoint_count_min = 2

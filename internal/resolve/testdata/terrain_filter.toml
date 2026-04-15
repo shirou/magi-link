@@ -1,0 +1,46 @@
+# terrain_filter puts matching-terrain hexes into Field. No Impacts.
+
+name        = "terrain_filter collects matching hexes into Field"
+description = "Only fire_floor hexes in radius are captured"
+
+[battlefield]
+grid_width  = 20
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [5, 4]
+hp     = 100
+player = true
+
+[[battlefield.terrain]]
+pos  = [5, 3]
+type = "fire_floor"
+
+[[battlefield.terrain]]
+pos  = [6, 4]
+type = "fire_floor"
+
+# Non-matching terrain inside the same radius; must NOT enter Field.
+[[battlefield.terrain]]
+pos  = [4, 4]
+type = "poison_swamp"
+
+[input]
+caster  = [5, 4]
+clicked = [5, 4]
+
+[[input.spells]]
+id     = "fire_filter"
+type   = "target"
+shape  = "terrain_filter"
+filter = "fire_floor"
+radius = 5
+
+[expected]
+impact_count   = 1         # clicked hex has the player (seedInitialState)
+field_count    = 2
+contains_field = [[5, 3], [6, 4]]
+excludes_field = [[4, 4]]
+waypoint_count = 0

@@ -1,0 +1,34 @@
+# self + heal: caster becomes Impact. No Field, no Waypoints.
+
+name        = "self + heal puts only caster in Impacts"
+description = "self overrides origins to caster; heal applies to Impacts"
+
+[battlefield]
+grid_width  = 12
+grid_height = 10
+
+[[battlefield.units]]
+id     = 1
+name   = "Player"
+pos    = [3, 0]
+hp     = 100
+player = true
+
+[input]
+caster    = [3, 0]
+clicked   = [5, 0]   # intentionally not caster; self should ignore
+direction = 0
+
+[[input.spells]]
+ref = "self"
+
+[[input.spells]]
+id   = "heal"
+type = "action"
+heal = 10
+
+[expected]
+impact_count     = 1
+contains_impacts = [1]
+field_count      = 0
+waypoint_count   = 0
